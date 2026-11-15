@@ -1,0 +1,212 @@
+name: Deploy web
+
+# Manual only. Builds the Angular SPA from the selected branch commit with the API URL resolved from Azure,
+# deploys it to the App Service and verifies the homepage, a deep link and the API CORS response.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment (test/prod stay disabled until DEPLOYMENTS_ENABLED=true in that environment)
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-web-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy to ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      FUNCTION_APP_NAME: ${{ vars.FUNCTION_APP_NAME }}
+      WEB_APP_NAME: ${{ vars.WEB_APP_NAME }}
+      DIST: EIWAMS.Web/dist/EIWAMS.Web/browser
+
+    steps:
+      - name: Guard environment
+        if: ${{ inputs.environment != 'dev' && vars.DEPLOYMENTS_ENABLED != 'true' }}
+        run: |
+          echo "::error::Deployments to '${ENV_NAME}' are disabled. Set DEPLOYMENTS_ENABLED=true in the '${ENV_NAME}' GitHub environment first."
+          exit 1
+
+      - name: Check required variables
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          missing=()
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID RG FUNCTION_APP_NAME WEB_APP_NAME; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing '${ENV_NAME}' environment variables: ${missing[*]} (RG=AZURE_RESOURCE_GROUP)."
+            exit 1
+          fi
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # Resource names are used for deployment actions; Azure defaultHostName values are used for every URL.
+      - name: Resolve hostnames from Azure
+        id: hosts
+        run: |
+          set -euo pipefail
+          func_id=$(az functionapp show -g "$RG" -n "$FUNCTION_APP_NAME" --query id -o tsv 2>/dev/null) || {
+            echo "::error::Function App '$FUNCTION_APP_NAME' was not found in '$RG'."; exit 1; }
+          # Older Microsoft.Web API versions used by `az functionapp show` return a null defaultHostName for Flex Consumption apps.
+          func_site=$(az resource show --ids "$func_id" --api-version 2024-04-01 -o json) || {
+            echo "::error::Could not read Function App '$FUNCTION_APP_NAME' with Microsoft.Web API version 2024-04-01."; exit 1; }
+          func_host=$(jq -r '.properties.defaultHostName // ([.properties.enabledHostNames[]? | select(contains(".scm.") | not)][0]) // empty' <<<"$func_site")
+          web=$(az webapp show -g "$RG" -n "$WEB_APP_NAME" --query "{host: defaultHostName, linux: reserved}" -o json 2>/dev/null) || {
+            echo "::error::Web App '$WEB_APP_NAME' was not found in '$RG'."; exit 1; }
+          web_host=$(jq -r '.host // empty' <<<"$web")
+          web_os=$([ "$(jq -r '.linux' <<<"$web")" = "true" ] && echo linux || echo windows)
+          [ -n "$func_host" ] || { echo "::error::Could not resolve the Function App hostname."; exit 1; }
+          [ -n "$web_host" ] || { echo "::error::Could not resolve the Web App hostname."; exit 1; }
+          echo "API  https://$func_host/api"
+          echo "Web  https://$web_host ($web_os)"
+          {
+            echo "func_host=$func_host"
+            echo "web_host=$web_host"
+            echo "web_os=$web_os"
+            echo "api_base_url=https://$func_host/api"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Inject API base URL
+        env:
+          API_BASE_URL: ${{ steps.hosts.outputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          file=EIWAMS.Web/src/environments/environment.ts
+          grep -q "apiBaseUrl: '/api'" "$file" || { echo "::error::$file no longer contains apiBaseUrl: '/api'; update this step."; exit 1; }
+          sed -i "s|apiBaseUrl: '/api'|apiBaseUrl: '${API_BASE_URL}'|" "$file"
+          grep -q "apiBaseUrl: '${API_BASE_URL}'" "$file" || { echo "::error::apiBaseUrl replacement failed."; exit 1; }
+          cat "$file"
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: EIWAMS.Web/package-lock.json
+
+      - name: Install and build (production)
+        working-directory: EIWAMS.Web
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+
+      - name: Verify bundle
+        env:
+          API_BASE_URL: ${{ steps.hosts.outputs.api_base_url }}
+        run: |
+          set -euo pipefail
+          [ -f "$DIST/index.html" ] || { echo "::error::$DIST/index.html is missing."; exit 1; }
+          if ! grep -rlF --include='*.js' "$API_BASE_URL" "$DIST" >/dev/null; then
+            echo "::error::The bundle does not contain $API_BASE_URL."; exit 1
+          fi
+          if grep -rlF --include='*.js' 'localhost:7274' "$DIST" >/dev/null; then
+            echo "::error::The bundle still references localhost:7274."; exit 1
+          fi
+          echo "Bundle contains $API_BASE_URL."
+
+      - name: Configure SPA route fallback
+        env:
+          WEB_OS: ${{ steps.hosts.outputs.web_os }}
+        run: |
+          set -euo pipefail
+          if [ "$WEB_OS" = "windows" ]; then
+            [ -f "$DIST/web.config" ] || { echo "::error::$DIST/web.config (IIS SPA rewrite) is missing."; exit 1; }
+            echo "Windows App Service: SPA fallback via web.config URL Rewrite."
+          else
+            az webapp config set -g "$RG" -n "$WEB_APP_NAME" \
+              --startup-file "pm2 serve /home/site/wwwroot --no-daemon --spa" --only-show-errors -o none
+            echo "Linux App Service: startup command set to pm2 serve --spa."
+          fi
+
+      - name: Deploy to App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ vars.WEB_APP_NAME }}
+          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          package: ${{ env.DIST }}
+
+      - name: Verify homepage, deep link and API CORS
+        env:
+          FUNC_HOST: ${{ steps.hosts.outputs.func_host }}
+          WEB_HOST: ${{ steps.hosts.outputs.web_host }}
+        run: |
+          set -uo pipefail
+          origin="https://$WEB_HOST"
+          check_page() {
+            local url=$1
+            for attempt in $(seq 1 10); do
+              code=$(curl -sS -o "$RUNNER_TEMP/page.html" -w '%{http_code}' --max-time 30 "$url" || echo 000)
+              if [ "$code" = "200" ] && grep -q '<app-root' "$RUNNER_TEMP/page.html"; then
+                echo "GET $url -> 200 (SPA shell)"; return 0
+              fi
+              echo "GET $url -> $code (attempt $attempt), retrying in 10s..."; sleep 10
+            done
+            echo "::error::GET $url did not return the SPA shell."; return 1
+          }
+
+          check_page "$origin/" || exit 1
+          check_page "$origin/access-requests" || exit 1
+
+          api="https://$FUNC_HOST/api/auth/config"
+          ok=0
+          for _ in $(seq 1 10); do
+            code=$(curl -sS -D "$RUNNER_TEMP/h.txt" -o "$RUNNER_TEMP/config.json" -w '%{http_code}' --max-time 30 -H "Origin: $origin" "$api" || echo 000)
+            allow=$(grep -i '^access-control-allow-origin:' "$RUNNER_TEMP/h.txt" | tail -n1 | cut -d' ' -f2- | tr -d '\r' || true)
+            if [ "$code" = "200" ] && [ "$allow" = "$origin" ] && jq -e '.success == true and .data.mode == "EntraId"' "$RUNNER_TEMP/config.json" >/dev/null 2>&1; then
+              ok=1; break
+            fi
+            echo "GET $api -> $code, allow-origin '${allow}', retrying in 10s..."; sleep 10
+          done
+          [ "$ok" = 1 ] || { echo "::error::$api did not return EntraId config with Access-Control-Allow-Origin: $origin. Check the Function App CORS (stage 2-apps)."; exit 1; }
+          echo "GET $api with Origin $origin -> 200, CORS allowed, mode EntraId."
+
+          code=$(curl -sS -o /dev/null -D "$RUNNER_TEMP/p.txt" -w '%{http_code}' --max-time 30 -X OPTIONS \
+            -H "Origin: $origin" -H "Access-Control-Request-Method: GET" \
+            -H "Access-Control-Request-Headers: authorization,x-correlation-id" "$api" || echo 000)
+          allow=$(grep -i '^access-control-allow-origin:' "$RUNNER_TEMP/p.txt" | tail -n1 | cut -d' ' -f2- | tr -d '\r' || true)
+          if [[ "$code" =~ ^20[04]$ ]] && [ "$allow" = "$origin" ]; then
+            echo "Preflight (Authorization, X-Correlation-Id) -> $code, allowed."
+          else
+            echo "::error::CORS preflight failed: HTTP $code, allow-origin '${allow}'."; exit 1
+          fi
+
+          {
+            echo "### Web deployment verified"
+            echo
+            echo "| Check | Result |"
+            echo "|---|---|"
+            echo "| Homepage $origin/ | 200 |"
+            echo "| Deep link $origin/access-requests | 200 (SPA fallback) |"
+            echo "| GET $api with Origin | 200, CORS allowed, EntraId |"
+            echo "| Preflight (Authorization, X-Correlation-Id) | $code |"
+            echo "| Commit | \`$GITHUB_SHA\` ($GITHUB_REF_NAME) |"
+          } >> "$GITHUB_STEP_SUMMARY"

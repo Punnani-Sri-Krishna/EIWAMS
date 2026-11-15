@@ -1,0 +1,64 @@
+.page-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.list {
+  padding: 0;
+}
+
+.item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  border-left: 4px solid transparent;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &.unread {
+    border-left-color: #0fa3b1;
+    background: rgba(15, 163, 177, 0.06);
+
+    .title {
+      font-weight: 700;
+    }
+
+    .dot {
+      color: #0fa3b1;
+    }
+  }
+}
+
+.dot {
+  margin-top: 2px;
+  opacity: 0.8;
+}
+
+.body {
+  flex: 1;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.title {
+  font-weight: 500;
+}
+
+.message {
+  margin: 2px 0;
+}
+
+.meta {
+  font-size: 0.8rem;
+  opacity: 0.7;
+}

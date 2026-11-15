@@ -1,0 +1,882 @@
+# EIWAMS API requests for the VS Code REST Client extension / Visual Studio .http support.
+# Start the API first:  cd EIWAMS.API; func start --port 7274
+# Ids and row versions are taken from earlier named requests; run requests top to bottom.
+
+@baseUrl = http://localhost:7274/api
+@userId = 1
+@hrUserId = 2
+@managerUserId = 3
+@securityUserId = 4
+@facilityAdminUserId = 5
+@receptionUserId = 6
+@eshaUserId = 7
+@auditorUserId = 8
+@eshaEmployeeId = 6
+@roleId = 8
+@validFromUtc = 2027-01-01T00:00:00Z
+@validToUtc = 2027-01-31T00:00:00Z
+@visitorPassToUtc = 2027-01-01T18:00:00Z
+@notificationId = {{getNotifications.response.body.$.data.items[0].notificationId}}
+@employeeId = {{createEmployee.response.body.$.data.employeeId}}
+@employeeVersion = {{getEmployee.response.body.$.data.version}}
+@cardId = {{createCard.response.body.$.data.cardId}}
+@cardVersion = {{activateCard.response.body.$.data.version}}
+@newCardId = {{replaceCard.response.body.$.data.cardId}}
+@newCardVersion = {{replaceCard.response.body.$.data.version}}
+@cardRequestId = {{createCardRequest.response.body.$.data.cardRequestId}}
+@accessRequestId = {{createAccessRequest.response.body.$.data.accessRequestId}}
+@accessRequestVersion = {{getAccessRequest.response.body.$.data.version}}
+@permissionId = {{provisionPermission.response.body.$.data.permissionId}}
+@cancelRequestId = {{createAccessRequest_ToCancel.response.body.$.data.accessRequestId}}
+@cancelRequestVersion = {{createAccessRequest_ToCancel.response.body.$.data.version}}
+@revokePassId = {{createVisitorPass_ToRevoke.response.body.$.data.visitorPassId}}
+@grantedPermissionIds = [1, 2, 3]
+@violationId = {{searchViolations.response.body.$.data.items[0].violationId}}
+@incidentId = {{createIncident.response.body.$.data.incidentId}}
+@incidentVersion = {{getIncident.response.body.$.data.version}}
+@visitorId = {{createVisitor.response.body.$.data.visitorId}}
+@visitorPassId = {{createVisitorPass.response.body.$.data.visitorPassId}}
+@blacklistId = {{createBlacklistEntry.response.body.$.data.blacklistId}}
+@adminUserId = {{createAdminUser.response.body.$.data.userId}}
+@departmentId = {{createDepartment.response.body.$.data.departmentId}}
+@locationId = {{createLocation.response.body.$.data.locationId}}
+@readerId = {{createReader.response.body.$.data.readerId}}
+
+### ===== Identity =====
+
+### GetAuthConfig
+# @name getAuthConfig
+GET {{baseUrl}}/auth/config
+
+### GetDevUsers
+# @name getDevUsers
+GET {{baseUrl}}/v1/dev/users
+
+### GetMe
+# @name getMe
+GET {{baseUrl}}/v1/me
+X-User-Id: {{eshaUserId}}
+
+### GetMyMenu
+# @name getMyMenu
+GET {{baseUrl}}/v1/me/menu
+X-User-Id: {{eshaUserId}}
+
+### GetLookups
+# @name getLookups
+GET {{baseUrl}}/v1/lookups
+X-User-Id: {{userId}}
+
+### GetNotifications
+# @name getNotifications
+GET {{baseUrl}}/v1/notifications?unreadOnly=false&page=1&pageSize=20
+X-User-Id: {{eshaUserId}}
+
+### GetUnreadNotificationCount
+# @name getUnreadNotificationCount
+GET {{baseUrl}}/v1/notifications/unread-count
+X-User-Id: {{eshaUserId}}
+
+### MarkNotificationRead
+# @name markNotificationRead
+POST {{baseUrl}}/v1/notifications/{{notificationId}}/read
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{}
+
+### MarkAllNotificationsRead
+# @name markAllNotificationsRead
+POST {{baseUrl}}/v1/notifications/read-all
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{}
+
+### ===== Employees =====
+
+### SearchEmployees
+# @name searchEmployees
+GET {{baseUrl}}/v1/employees?search=Patel&employmentStatus=Active&page=1&pageSize=20
+X-User-Id: {{hrUserId}}
+
+### CreateEmployee
+# @name createEmployee
+POST {{baseUrl}}/v1/employees
+X-User-Id: {{hrUserId}}
+Content-Type: application/json
+
+{
+  "employeeNumber": "EMP{{$randomInt 100 999}}{{$randomInt 100 999}}",
+  "firstName": "Ananya",
+  "lastName": "Iyer",
+  "workEmail": "ananya.iyer.{{$randomInt 100 999}}@eiwams.example.com",
+  "employeeType": "Permanent",
+  "departmentId": 1,
+  "managerEmployeeId": 1,
+  "locationId": 7,
+  "joinDate": "2026-01-05",
+  "endDate": null,
+  "userId": null
+}
+
+### GetEmployee
+# @name getEmployee
+GET {{baseUrl}}/v1/employees/{{employeeId}}
+X-User-Id: {{hrUserId}}
+
+### UpdateEmployee
+# @name updateEmployee
+PUT {{baseUrl}}/v1/employees/{{employeeId}}
+X-User-Id: {{hrUserId}}
+Content-Type: application/json
+
+{
+  "firstName": "Ananya",
+  "lastName": "Iyer-Rao",
+  "workEmail": "ananya.iyer.{{$randomInt 100 999}}@eiwams.example.com",
+  "employeeType": "Permanent",
+  "departmentId": 1,
+  "managerEmployeeId": 1,
+  "locationId": 7,
+  "joinDate": "2026-01-05",
+  "endDate": null,
+  "userId": null,
+  "version": "{{employeeVersion}}"
+}
+
+### TransferEmployee
+# @name transferEmployee
+POST {{baseUrl}}/v1/employees/{{employeeId}}/transfer
+X-User-Id: {{hrUserId}}
+Content-Type: application/json
+
+{
+  "departmentId": 2,
+  "managerEmployeeId": 1,
+  "locationId": 8,
+  "effectiveDate": "2026-02-01",
+  "reason": "Project reallocation"
+}
+
+### GetEmployeeCards
+# @name getEmployeeCards
+GET {{baseUrl}}/v1/employees/{{eshaEmployeeId}}/cards
+X-User-Id: {{hrUserId}}
+
+### GetEmployeeHistory
+# @name getEmployeeHistory
+GET {{baseUrl}}/v1/employees/{{employeeId}}/history
+X-User-Id: {{hrUserId}}
+
+### ===== Cards =====
+
+### SearchCards
+# @name searchCards
+GET {{baseUrl}}/v1/cards?status=Active&page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### CreateCard
+# @name createCard
+POST {{baseUrl}}/v1/cards
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "employeeId": {{employeeId}},
+  "cardUid": "04C9{{$randomInt 100 999}}{{$randomInt 100 999}}{{$randomInt 100 999}}",
+  "cardType": "Permanent",
+  "expiresAtUtc": null,
+  "cardRequestId": null
+}
+
+### ActivateCard
+# @name activateCard
+POST {{baseUrl}}/v1/cards/{{cardId}}/activate
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "version": "{{cardVersion}}"
+}
+
+### ReportLostCard
+# @name reportLostCard
+POST {{baseUrl}}/v1/cards/{{cardId}}/report-lost
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Card lost during commute"
+}
+
+### ReplaceCard
+# @name replaceCard
+POST {{baseUrl}}/v1/cards/{{cardId}}/replace
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "newCardUid": "04D7{{$randomInt 100 999}}{{$randomInt 100 999}}{{$randomInt 100 999}}",
+  "reason": "Replacement for lost card",
+  "version": "{{cardVersion}}"
+}
+
+### BlockCard
+# @name blockCard
+POST {{baseUrl}}/v1/cards/{{newCardId}}/block
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Suspicious activity reported",
+  "version": "{{newCardVersion}}"
+}
+
+### DeactivateCard
+# @name deactivateCard
+POST {{baseUrl}}/v1/cards/{{newCardId}}/deactivate
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Employee exit",
+  "version": "{{newCardVersion}}"
+}
+
+### SearchCardRequests
+# @name searchCardRequests
+GET {{baseUrl}}/v1/card-requests?status=Submitted&page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### CreateCardRequest
+# @name createCardRequest
+POST {{baseUrl}}/v1/card-requests
+X-User-Id: {{hrUserId}}
+Content-Type: application/json
+
+{
+  "employeeId": {{employeeId}},
+  "requestType": "Temporary",
+  "oldCardId": null,
+  "reason": "Forgot permanent card at home",
+  "requestedValidToUtc": "{{validToUtc}}"
+}
+
+### DecideCardRequest
+# @name decideCardRequest
+POST {{baseUrl}}/v1/card-requests/{{cardRequestId}}/decision
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "decision": "Verify",
+  "comments": "Identity verified at desk"
+}
+
+### DeactivateEmployee
+# @name deactivateEmployee
+POST {{baseUrl}}/v1/employees/{{employeeId}}/deactivate
+X-User-Id: {{hrUserId}}
+Content-Type: application/json
+
+{
+  "employmentStatus": "Exited",
+  "endDate": "2026-12-31",
+  "reason": "Resigned"
+}
+
+### ===== Access =====
+
+### SearchAccessRequests
+# @name searchAccessRequests
+GET {{baseUrl}}/v1/access-requests?mine=true&page=1&pageSize=20
+X-User-Id: {{eshaUserId}}
+
+### CreateAccessRequest
+# @name createAccessRequest
+POST {{baseUrl}}/v1/access-requests
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{
+  "employeeId": {{eshaEmployeeId}},
+  "locationId": 10,
+  "businessJustification": "Prototype validation in the R&D lab",
+  "validFromUtc": "{{validFromUtc}}",
+  "validToUtc": "{{validToUtc}}",
+  "submit": false
+}
+
+### GetAccessRequest
+# @name getAccessRequest
+GET {{baseUrl}}/v1/access-requests/{{accessRequestId}}
+X-User-Id: {{eshaUserId}}
+
+### UpdateAccessRequest
+# @name updateAccessRequest
+PUT {{baseUrl}}/v1/access-requests/{{accessRequestId}}
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{
+  "locationId": 10,
+  "businessJustification": "Prototype validation in the R&D lab (updated)",
+  "validFromUtc": "{{validFromUtc}}",
+  "validToUtc": "{{validToUtc}}",
+  "version": "{{accessRequestVersion}}"
+}
+
+### SubmitAccessRequest
+# @name submitAccessRequest
+POST {{baseUrl}}/v1/access-requests/{{accessRequestId}}/submit
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{
+  "version": "{{accessRequestVersion}}"
+}
+
+### GetPendingApprovals
+# @name getPendingApprovals
+GET {{baseUrl}}/v1/approvals/pending?page=1&pageSize=20
+X-User-Id: {{managerUserId}}
+
+### DecideApproval - Stage 1 of 3 (Manager).
+# @name decideApproval
+POST {{baseUrl}}/v1/approvals/{{accessRequestId}}/decision
+X-User-Id: {{managerUserId}}
+Content-Type: application/json
+
+{
+  "decision": "Approve",
+  "comments": "Approved by line manager",
+  "version": "{{accessRequestVersion}}"
+}
+
+### DecideApproval - Security - Stage 2 of 3 (Security).
+# @name decideApproval_Security
+POST {{baseUrl}}/v1/approvals/{{accessRequestId}}/decision
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "decision": "Approve",
+  "comments": "Security clearance verified",
+  "version": "{{accessRequestVersion}}"
+}
+
+### DecideApproval - FacilityAdmin - Stage 3 of 3 (FacilityAdmin); the request becomes Approved.
+# @name decideApproval_FacilityAdmin
+POST {{baseUrl}}/v1/approvals/{{accessRequestId}}/decision
+X-User-Id: {{facilityAdminUserId}}
+Content-Type: application/json
+
+{
+  "decision": "Approve",
+  "comments": "Capacity available",
+  "version": "{{accessRequestVersion}}"
+}
+
+### ProvisionPermission - Requires the request to be fully Approved (all three stages).
+# @name provisionPermission
+POST {{baseUrl}}/v1/permissions/provision
+X-User-Id: {{facilityAdminUserId}}
+Content-Type: application/json
+
+{
+  "accessRequestId": {{accessRequestId}}
+}
+
+### SearchPermissions
+# @name searchPermissions
+GET {{baseUrl}}/v1/permissions?status=Active&page=1&pageSize=20
+X-User-Id: {{facilityAdminUserId}}
+
+### RevokePermission
+# @name revokePermission
+POST {{baseUrl}}/v1/permissions/{{permissionId}}/revoke
+X-User-Id: {{facilityAdminUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Project completed"
+}
+
+### CreateAccessRequest - ToCancel
+# @name createAccessRequest_ToCancel
+POST {{baseUrl}}/v1/access-requests
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{
+  "employeeId": {{eshaEmployeeId}},
+  "locationId": 9,
+  "businessJustification": "Quarterly planning sessions on floor 5",
+  "validFromUtc": "{{validFromUtc}}",
+  "validToUtc": "{{validToUtc}}",
+  "submit": true
+}
+
+### CancelAccessRequest
+# @name cancelAccessRequest
+POST {{baseUrl}}/v1/access-requests/{{cancelRequestId}}/cancel
+X-User-Id: {{eshaUserId}}
+Content-Type: application/json
+
+{
+  "reason": "No longer required",
+  "version": "{{cancelRequestVersion}}"
+}
+
+### ===== Visitors =====
+
+### SearchVisitors
+# @name searchVisitors
+GET {{baseUrl}}/v1/visitors?page=1&pageSize=20
+X-User-Id: {{receptionUserId}}
+
+### CreateVisitor
+# @name createVisitor
+POST {{baseUrl}}/v1/visitors
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{
+  "displayName": "Rahul Khanna",
+  "organization": "Infosys Ltd",
+  "contactReference": "+91-98450-00000",
+  "visitPurpose": "Vendor meeting",
+  "sponsorUserId": 3
+}
+
+### SearchVisitorPasses
+# @name searchVisitorPasses
+GET {{baseUrl}}/v1/visitor-passes?page=1&pageSize=20
+X-User-Id: {{receptionUserId}}
+
+### CreateVisitorPass
+# @name createVisitorPass
+POST {{baseUrl}}/v1/visitor-passes
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{
+  "visitorId": {{visitorId}},
+  "locationId": 5,
+  "validFromUtc": "{{$datetime iso8601}}",
+  "validToUtc": "{{visitorPassToUtc}}",
+  "sponsorUserId": 3
+}
+
+### ApproveVisitorPass
+# @name approveVisitorPass
+POST {{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/approve
+X-User-Id: {{facilityAdminUserId}}
+Content-Type: application/json
+
+{
+  "comments": "Approved"
+}
+
+### CheckInVisitorPass
+# @name checkInVisitorPass
+POST {{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/check-in
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{}
+
+### CheckOutVisitorPass
+# @name checkOutVisitorPass
+POST {{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/check-out
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{}
+
+### CreateVisitorPass - ToRevoke
+# @name createVisitorPass_ToRevoke
+POST {{baseUrl}}/v1/visitor-passes
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{
+  "visitorId": {{visitorId}},
+  "locationId": 5,
+  "validFromUtc": "{{$datetime iso8601}}",
+  "validToUtc": "{{visitorPassToUtc}}",
+  "sponsorUserId": 3
+}
+
+### RevokeVisitorPass
+# @name revokeVisitorPass
+POST {{baseUrl}}/v1/visitor-passes/{{revokePassId}}/revoke
+X-User-Id: {{receptionUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Visit cancelled"
+}
+
+### ===== RFID & Security =====
+
+### IngestRfidEvent
+# @name ingestRfidEvent
+POST {{baseUrl}}/v1/rfid/events
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "readerId": "RDR-BLR-ODC1-01",
+  "externalEventId": "evt-{{$guid}}",
+  "cardUid": "04A10000000007",
+  "eventType": "Entry",
+  "eventAtUtc": "{{$datetime iso8601}}"
+}
+
+### SearchRfidEvents
+# @name searchRfidEvents
+GET {{baseUrl}}/v1/rfid/events?decision=Denied&page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### SearchViolations
+# @name searchViolations
+GET {{baseUrl}}/v1/violations?status=Open&page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### ReviewViolation
+# @name reviewViolation
+POST {{baseUrl}}/v1/violations/{{violationId}}/review
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "status": "Confirmed",
+  "reviewNotes": "Verified with CCTV footage",
+  "createIncident": false
+}
+
+### SearchIncidents
+# @name searchIncidents
+GET {{baseUrl}}/v1/incidents?page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### CreateIncident
+# @name createIncident
+POST {{baseUrl}}/v1/incidents
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "title": "Tailgating at ODC1",
+  "description": "Two people entered on a single swipe.",
+  "incidentType": "Tailgating",
+  "severity": "High",
+  "violationId": null,
+  "locationId": 7,
+  "assignedToUserId": 4
+}
+
+### GetIncident
+# @name getIncident
+GET {{baseUrl}}/v1/incidents/{{incidentId}}
+X-User-Id: {{securityUserId}}
+
+### UpdateIncident
+# @name updateIncident
+PATCH {{baseUrl}}/v1/incidents/{{incidentId}}
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "status": "UnderReview",
+  "assignedToUserId": 4,
+  "resolution": null,
+  "note": "Reviewing CCTV",
+  "version": "{{incidentVersion}}"
+}
+
+### SearchBlacklist
+# @name searchBlacklist
+GET {{baseUrl}}/v1/blacklist?isActive=true&page=1&pageSize=20
+X-User-Id: {{securityUserId}}
+
+### CreateBlacklistEntry
+# @name createBlacklistEntry
+POST {{baseUrl}}/v1/blacklist
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "subjectType": "Visitor",
+  "subjectId": {{visitorId}},
+  "reason": "Repeated policy violations",
+  "reviewDate": "2027-06-30"
+}
+
+### LiftBlacklistEntry
+# @name liftBlacklistEntry
+POST {{baseUrl}}/v1/blacklist/{{blacklistId}}/lift
+X-User-Id: {{securityUserId}}
+Content-Type: application/json
+
+{
+  "reason": "Review completed"
+}
+
+### ===== Dashboard =====
+
+### GetDashboardSummary
+# @name getDashboardSummary
+GET {{baseUrl}}/v1/dashboard/summary
+X-User-Id: {{userId}}
+
+### GetDashboardEventsTrend
+# @name getDashboardEventsTrend
+GET {{baseUrl}}/v1/dashboard/events-trend?days=14
+X-User-Id: {{userId}}
+
+### GetDashboardRequestsByStatus
+# @name getDashboardRequestsByStatus
+GET {{baseUrl}}/v1/dashboard/requests-by-status
+X-User-Id: {{userId}}
+
+### GetDashboardViolationsByType
+# @name getDashboardViolationsByType
+GET {{baseUrl}}/v1/dashboard/violations-by-type
+X-User-Id: {{userId}}
+
+### GetDashboardCardsByStatus
+# @name getDashboardCardsByStatus
+GET {{baseUrl}}/v1/dashboard/cards-by-status
+X-User-Id: {{userId}}
+
+### GetDashboardOccupancy
+# @name getDashboardOccupancy
+GET {{baseUrl}}/v1/dashboard/occupancy
+X-User-Id: {{userId}}
+
+### GetDashboardMyWork
+# @name getDashboardMyWork
+GET {{baseUrl}}/v1/dashboard/my-work
+X-User-Id: {{managerUserId}}
+
+### GetDashboardActivity
+# @name getDashboardActivity
+GET {{baseUrl}}/v1/dashboard/activity?top=20
+X-User-Id: {{userId}}
+
+### ===== Reports & Audit =====
+
+### GetReport
+# @name getReport
+GET {{baseUrl}}/v1/reports/access-activity?page=1&pageSize=20
+X-User-Id: {{auditorUserId}}
+
+### ExportReport
+# @name exportReport
+GET {{baseUrl}}/v1/reports/access-activity/export
+X-User-Id: {{auditorUserId}}
+
+### SearchAuditLogs
+# @name searchAuditLogs
+GET {{baseUrl}}/v1/audit-logs?page=1&pageSize=20
+X-User-Id: {{auditorUserId}}
+
+### GetAuditTimeline
+# @name getAuditTimeline
+GET {{baseUrl}}/v1/audit-logs/timeline?entityType=AccessRequest&entityId={{accessRequestId}}
+X-User-Id: {{auditorUserId}}
+
+### ===== Admin & Reference =====
+
+### GetAdminUsers
+# @name getAdminUsers
+GET {{baseUrl}}/v1/admin/users?isActive=true&page=1&pageSize=20
+X-User-Id: {{userId}}
+
+### CreateAdminUser
+# @name createAdminUser
+POST {{baseUrl}}/v1/admin/users
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "displayName": "Neha Kulkarni",
+  "email": "neha.kulkarni.{{$randomInt 100 999}}@eiwams.example.com",
+  "entraObjectId": null,
+  "isActive": true,
+  "allFacilities": false,
+  "roleIds": [
+    1
+  ],
+  "facilityIds": [
+    1
+  ],
+  "employeeId": null
+}
+
+### UpdateAdminUser
+# @name updateAdminUser
+PUT {{baseUrl}}/v1/admin/users/{{adminUserId}}
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "displayName": "Neha Kulkarni",
+  "email": "neha.kulkarni.{{$randomInt 100 999}}@eiwams.example.com",
+  "entraObjectId": null,
+  "isActive": true,
+  "allFacilities": false,
+  "roleIds": [
+    1,
+    3
+  ],
+  "facilityIds": [
+    1
+  ],
+  "employeeId": null
+}
+
+### GetRoles
+# @name getRoles
+GET {{baseUrl}}/v1/admin/roles
+X-User-Id: {{userId}}
+
+### GetRolePermissions
+# @name getRolePermissions
+GET {{baseUrl}}/v1/admin/roles/{{roleId}}/permissions
+X-User-Id: {{userId}}
+
+### SetRolePermissions - Replaces the role's grant list; the sample re-applies the grants read by GetRolePermissions (idempotent).
+# @name setRolePermissions
+PUT {{baseUrl}}/v1/admin/roles/{{roleId}}/permissions
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "permissionIds": {{grantedPermissionIds}}
+}
+
+### GetPermissionCatalog
+# @name getPermissionCatalog
+GET {{baseUrl}}/v1/admin/permissions
+X-User-Id: {{userId}}
+
+### GetDepartments
+# @name getDepartments
+GET {{baseUrl}}/v1/departments
+X-User-Id: {{userId}}
+
+### CreateDepartment
+# @name createDepartment
+POST {{baseUrl}}/v1/departments
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "departmentCode": "D{{$randomInt 100 999}}",
+  "departmentName": "Data Science",
+  "headUserId": null,
+  "isActive": true
+}
+
+### UpdateDepartment
+# @name updateDepartment
+PUT {{baseUrl}}/v1/departments/{{departmentId}}
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "departmentCode": "D{{$randomInt 100 999}}",
+  "departmentName": "Data Science & AI",
+  "headUserId": null,
+  "isActive": true
+}
+
+### GetLocations
+# @name getLocations
+GET {{baseUrl}}/v1/locations
+X-User-Id: {{userId}}
+
+### CreateLocation
+# @name createLocation
+POST {{baseUrl}}/v1/locations
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "parentLocationId": 2,
+  "locationCode": "BLR-TA-L{{$randomInt 100 999}}",
+  "locationName": "Innovation Lab",
+  "locationType": "Zone",
+  "isRestricted": true,
+  "isActive": true,
+  "timeZone": "India Standard Time"
+}
+
+### UpdateLocation
+# @name updateLocation
+PUT {{baseUrl}}/v1/locations/{{locationId}}
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "parentLocationId": 2,
+  "locationCode": "BLR-TA-L{{$randomInt 100 999}}",
+  "locationName": "Innovation Lab 2",
+  "locationType": "Zone",
+  "isRestricted": true,
+  "isActive": true,
+  "timeZone": "India Standard Time"
+}
+
+### GetReaders
+# @name getReaders
+GET {{baseUrl}}/v1/readers
+X-User-Id: {{userId}}
+
+### CreateReader
+# @name createReader
+POST {{baseUrl}}/v1/readers
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "readerId": "RDR-TEST-{{$randomInt 100 999}}",
+  "readerName": "Innovation Lab Door",
+  "locationId": {{locationId}},
+  "direction": "Both",
+  "isActive": true
+}
+
+### UpdateReader
+# @name updateReader
+PUT {{baseUrl}}/v1/readers/{{readerId}}
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "readerId": "{{readerId}}",
+  "readerName": "Innovation Lab Door (East)",
+  "locationId": {{locationId}},
+  "direction": "In",
+  "isActive": true
+}
+
+### GetSettings
+# @name getSettings
+GET {{baseUrl}}/v1/admin/settings
+X-User-Id: {{userId}}
+
+### UpdateSetting
+# @name updateSetting
+PUT {{baseUrl}}/v1/admin/settings
+X-User-Id: {{userId}}
+Content-Type: application/json
+
+{
+  "settingKey": "Permission.ExpiryWarningDays",
+  "settingValue": "7"
+}

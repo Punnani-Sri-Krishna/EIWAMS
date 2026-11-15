@@ -1,0 +1,100 @@
+<header class="app-bar">
+  <div class="bar-inner">
+    <button mat-icon-button class="hamburger" type="button" aria-label="Toggle navigation"
+            [attr.aria-expanded]="mobileOpen()" (click)="toggleMobile()">
+      <mat-icon>{{ mobileOpen() ? 'close' : 'menu' }}</mat-icon>
+    </button>
+
+    <a class="brand" routerLink="/dashboard">
+      <span class="brand-icon"><mat-icon>verified_user</mat-icon></span>
+      <span class="brand-text">
+        <span class="brand-name">EIWAMS</span>
+        <span class="brand-sub">Workplace Access</span>
+      </span>
+    </a>
+
+    <nav class="sections" aria-label="Main navigation">
+      @for (s of sections(); track s.section) {
+        @if (s.items.length === 1) {
+          <a mat-button class="nav-btn" [routerLink]="link(s.items[0].route)" routerLinkActive="active">
+            <mat-icon>{{ s.items[0].icon }}</mat-icon>
+            {{ s.items[0].label }}
+          </a>
+        } @else {
+          <button mat-button class="nav-btn" type="button" [class.active]="sectionActive(s)" [matMenuTriggerFor]="sectionMenu">
+            <mat-icon>{{ s.items[0].icon }}</mat-icon>
+            {{ s.section }}
+            <mat-icon iconPositionEnd>expand_more</mat-icon>
+          </button>
+          <mat-menu #sectionMenu="matMenu">
+            @for (i of s.items; track i.menuId) {
+              <a mat-menu-item [routerLink]="link(i.route)" routerLinkActive="menu-active">
+                <mat-icon>{{ i.icon }}</mat-icon>
+                <span>{{ i.label }}</span>
+              </a>
+            }
+          </mat-menu>
+        }
+      }
+    </nav>
+
+    <span class="spacer"></span>
+
+    <button mat-icon-button type="button" class="bar-icon" aria-label="Notifications" matTooltip="Notifications"
+            [matMenuTriggerFor]="notifMenu" (menuOpened)="loadLatest()">
+      <mat-icon [matBadge]="unread() || null" matBadgeColor="warn" matBadgeSize="small" [matBadgeHidden]="!unread()"
+                aria-hidden="false">notifications</mat-icon>
+    </button>
+    <mat-menu #notifMenu="matMenu" class="notif-menu" xPosition="before">
+      <div class="notif-head" (click)="$event.stopPropagation()">
+        <strong>Notifications</strong>
+        <button mat-button type="button" [disabled]="!unread()" (click)="markAllRead()">Mark all read</button>
+      </div>
+      <mat-divider />
+      @for (n of notifications(); track n.notificationId) {
+        <button mat-menu-item type="button" class="notif-item" [class.unread]="!n.readAtUtc" (click)="open(n)">
+          <span class="notif-title">{{ n.title }}</span>
+          <span class="notif-msg">{{ n.message }}</span>
+          <span class="notif-time">{{ n.createdAtUtc | date: 'medium' }}</span>
+        </button>
+      } @empty {
+        <div class="notif-empty">You're all caught up.</div>
+      }
+      <mat-divider />
+      <a mat-menu-item routerLink="/notifications"><mat-icon>list</mat-icon><span>View all</span></a>
+    </mat-menu>
+
+    <button mat-button type="button" class="user-btn" [matMenuTriggerFor]="userMenu" aria-label="User menu">
+      <span class="avatar">{{ initials() }}</span>
+      <span class="user-name">{{ user()?.displayName }}</span>
+    </button>
+    <mat-menu #userMenu="matMenu" xPosition="before">
+      <div class="user-head">
+        <strong>{{ user()?.displayName }}</strong>
+        <small>{{ user()?.email }}</small>
+        <small class="roles">{{ user()?.roles?.join(', ') }}</small>
+      </div>
+      <mat-divider />
+      <a mat-menu-item routerLink="/profile"><mat-icon>person</mat-icon><span>Profile</span></a>
+      <button mat-menu-item type="button" (click)="signOut()"><mat-icon>logout</mat-icon><span>Sign out</span></button>
+    </mat-menu>
+  </div>
+
+  @if (mobileOpen()) {
+    <nav class="mobile-panel" aria-label="Mobile navigation">
+      @for (s of sections(); track s.section) {
+        <div class="mobile-section">
+          <div class="mobile-section-title">{{ s.section }}</div>
+          @for (i of s.items; track i.menuId) {
+            <a class="mobile-link" [routerLink]="link(i.route)" routerLinkActive="active">
+              <mat-icon>{{ i.icon }}</mat-icon>
+              <span>{{ i.label }}</span>
+            </a>
+          }
+        </div>
+      }
+    </nav>
+  }
+</header>
+
+<main class="shell-content"><router-outlet /></main>

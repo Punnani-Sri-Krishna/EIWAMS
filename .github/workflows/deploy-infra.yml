@@ -1,0 +1,278 @@
+name: Deploy infrastructure
+
+# Manual only. Pick the branch in the "Use workflow from" selector; the run checks out that commit.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment (test/prod stay disabled until DEPLOYMENTS_ENABLED=true in that environment)
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+        default: dev
+      stage:
+        description: 1-foundation (identity, storage, SQL) then 2-apps (monitoring, web, Function App)
+        type: choice
+        options:
+          - 1-foundation
+          - 2-apps
+        default: 1-foundation
+      apply:
+        description: Apply changes. Unchecked = what-if preview only.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-infra-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  infra:
+    name: ${{ inputs.stage }} / ${{ inputs.environment }} / ${{ inputs.apply && 'apply' || 'what-if' }}
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      STAGE: ${{ inputs.stage == '1-foundation' && 'foundation' || 'apps' }}
+      APPLY: ${{ inputs.apply }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+    steps:
+      - name: Guard environment
+        if: ${{ inputs.environment != 'dev' && vars.DEPLOYMENTS_ENABLED != 'true' }}
+        run: |
+          echo "::error::Deployments to '${ENV_NAME}' are disabled. Set the variable DEPLOYMENTS_ENABLED=true in the '${ENV_NAME}' GitHub environment first."
+          exit 1
+
+      - name: Check required variables
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          HAS_SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD != '' }}
+        run: |
+          missing=()
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_RESOURCE_GROUP; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ "$STAGE" = "foundation" ] && [ "$HAS_SQL_ADMIN_PASSWORD" != "true" ]; then missing+=("secret SQL_ADMIN_PASSWORD"); fi
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing in the '${ENV_NAME}' environment: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Preflight (resource group, providers, Bicep)
+        run: |
+          set -euo pipefail
+          location=$(az group show -n "$RG" --query location -o tsv) || {
+            echo "::error::Resource group '$RG' was not found or the deploy identity has no access. Create it and grant the deploy identity Contributor on it."
+            exit 1
+          }
+          echo "Resource group $RG in $location"
+          echo "LOCATION=$location" >> "$GITHUB_ENV"
+
+          unregistered=()
+          for ns in Microsoft.ManagedIdentity Microsoft.Storage Microsoft.Sql Microsoft.Web Microsoft.OperationalInsights Microsoft.Insights; do
+            state=$(az provider show -n "$ns" --query registrationState -o tsv 2>/dev/null || echo Unknown)
+            echo "  $ns: $state"
+            [ "$state" = "Registered" ] || unregistered+=("$ns")
+          done
+          if [ ${#unregistered[@]} -gt 0 ]; then
+            msg="Resource providers not registered: ${unregistered[*]}. A subscription Owner/Contributor must run: az provider register --namespace <name>"
+            if [ "$APPLY" = "true" ]; then echo "::error::$msg"; exit 1; else echo "::warning::$msg"; fi
+          fi
+
+          az bicep install --only-show-errors
+          az bicep version
+
+      - name: Check foundation outputs and storage role assignments
+        if: ${{ env.STAGE == 'apps' }}
+        run: |
+          set -euo pipefail
+          outputs=$(az deployment group show -g "$RG" -n "eiwams-${ENV_NAME}-foundation" --query properties.outputs -o json 2>/dev/null) || {
+            echo "::error::Deployment 'eiwams-${ENV_NAME}-foundation' was not found in $RG. Run stage 1-foundation with apply first."
+            exit 1
+          }
+          storage_id=$(jq -r '.storageAccountId.value' <<<"$outputs")
+          principal_id=$(jq -r '.identityPrincipalId.value' <<<"$outputs")
+          identity_name=$(jq -r '.identityName.value' <<<"$outputs")
+          echo "Runtime identity $identity_name (principal $principal_id)"
+          echo "Storage scope $storage_id"
+
+          missing=0
+          {
+            echo "### Storage role assignments for \`$identity_name\`"
+            echo
+            echo "| Role | Assigned |"
+            echo "|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Read assignments at the storage scope and above without Microsoft Graph lookups (the deploy identity has no Graph rights).
+          assignments=$(az role assignment list --scope "$storage_id" --include-inherited \
+            --fill-principal-name false --fill-role-definition-name false \
+            --query "[?principalId=='$principal_id'].roleDefinitionId" -o tsv)
+          while IFS='|' read -r role_name role_id; do
+            if grep -qi "/roleDefinitions/$role_id\$" <<<"$assignments"; then
+              echo "  OK       $role_name"; echo "| $role_name | yes |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              missing=1
+              echo "  MISSING  $role_name"; echo "| $role_name | **no** |" >> "$GITHUB_STEP_SUMMARY"
+              echo "    az role assignment create --assignee-object-id $principal_id --assignee-principal-type ServicePrincipal --role $role_id --scope $storage_id"
+            fi
+          done < <(jq -r '.requiredStorageRoles.value[] | "\(.name)|\(.id)"' <<<"$outputs")
+
+          if [ "$missing" -eq 1 ]; then
+            msg="The runtime identity is missing storage data roles (commands above). An Owner or User Access Administrator must assign them; the Contributor deploy identity cannot."
+            if [ "$APPLY" = "true" ]; then echo "::error::$msg"; exit 1; else echo "::warning::$msg"; fi
+          fi
+
+          if az functionapp list-flexconsumption-runtimes --location "$LOCATION" --runtime dotnet-isolated --query "[?version=='10.0'] | length(@)" -o tsv 2>/dev/null | grep -qx '[1-9][0-9]*'; then
+            echo "Flex Consumption dotnet-isolated 10.0 is available in $LOCATION."
+          else
+            echo "::warning::Could not confirm Flex Consumption dotnet-isolated 10.0 in $LOCATION (az functionapp list-flexconsumption-runtimes)."
+          fi
+
+      - name: What-if
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          SQL_ENTRA_ADMIN_LOGIN: ${{ vars.SQL_ENTRA_ADMIN_LOGIN }}
+          SQL_ENTRA_ADMIN_OBJECT_ID: ${{ vars.SQL_ENTRA_ADMIN_OBJECT_ID }}
+          AUTH_ENTRA_TENANT_ID: ${{ vars.AUTH_ENTRA_TENANT_ID }}
+          AUTH_ENTRA_CLIENT_ID: ${{ vars.AUTH_ENTRA_CLIENT_ID }}
+          AUTH_ENTRA_SPA_CLIENT_ID: ${{ vars.AUTH_ENTRA_SPA_CLIENT_ID }}
+          AUTH_ENTRA_REQUIRED_SCOPE: ${{ vars.AUTH_ENTRA_REQUIRED_SCOPE }}
+          AUTH_ENTRA_REQUIRED_GROUP_ID: ${{ vars.AUTH_ENTRA_REQUIRED_GROUP_ID }}
+          AUTH_ENTRA_AUDIENCE: ${{ vars.AUTH_ENTRA_AUDIENCE }}
+          AUTH_ENTRA_API_SCOPE: ${{ vars.AUTH_ENTRA_API_SCOPE }}
+          ADDITIONAL_CORS_ORIGINS: ${{ vars.ADDITIONAL_CORS_ORIGINS }}
+          SQL_RUNTIME_CONNECTION_STRING: ${{ secrets.SQL_RUNTIME_CONNECTION_STRING }}
+        run: |
+          set -euo pipefail
+          args=(-g "$RG" -n "eiwams-${ENV_NAME}-${STAGE}"
+                --template-file "infra/main.${STAGE}.bicep"
+                --parameters "infra/parameters/${ENV_NAME}.${STAGE}.bicepparam")
+
+          # Azure what-if intermittently fails with OperationNotFound while polling; retry before giving up.
+          whatif_ok=false
+          for attempt in 1 2 3; do
+            if az deployment group what-if "${args[@]}" --no-pretty-print --only-show-errors -o json > "$RUNNER_TEMP/whatif.json"; then
+              whatif_ok=true; break
+            fi
+            echo "::warning::What-if attempt $attempt failed; retrying in 30s..."
+            sleep 30
+          done
+          if [ "$whatif_ok" != "true" ]; then
+            if [ "$APPLY" = "true" ]; then
+              echo "::warning::What-if failed 3 times (Azure-side). Continuing because Apply is checked; the deployment itself validates the template."
+              echo "### What-if: ${STAGE} (${ENV_NAME})"$'\n\n'"What-if was unavailable (Azure error); deployment continued." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "::error::What-if failed 3 times. Re-run the workflow; if it keeps failing, run with Apply checked."
+            exit 1
+          fi
+
+          jq -r '.changes[] | select(.changeType != "Ignore") | "\(.changeType)\t\(.resourceId | split("/providers/") | last)"' "$RUNNER_TEMP/whatif.json"
+          {
+            echo "### What-if: ${STAGE} (${ENV_NAME})"
+            echo
+            echo "| Change | Resource |"
+            echo "|---|---|"
+            jq -r '.changes[] | select(.changeType != "Ignore") | "| \(.changeType) | `\(.resourceId | split("/providers/") | last)` |"' \
+                "$RUNNER_TEMP/whatif.json"
+            echo
+            if [ "$APPLY" = "true" ]; then echo "Apply is checked: changes will be deployed."; else echo "Preview only. Re-run with **Apply** checked to deploy."; fi
+            if [ "$STAGE" = "apps" ]; then
+              if [ -n "$SQL_RUNTIME_CONNECTION_STRING" ]; then echo "SQL runtime auth: **SQL_RUNTIME_CONNECTION_STRING secret** (fallback)."; else echo "SQL runtime auth: **managed identity**."; fi
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy
+        if: ${{ inputs.apply }}
+        env:
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
+          SQL_ENTRA_ADMIN_LOGIN: ${{ vars.SQL_ENTRA_ADMIN_LOGIN }}
+          SQL_ENTRA_ADMIN_OBJECT_ID: ${{ vars.SQL_ENTRA_ADMIN_OBJECT_ID }}
+          AUTH_ENTRA_TENANT_ID: ${{ vars.AUTH_ENTRA_TENANT_ID }}
+          AUTH_ENTRA_CLIENT_ID: ${{ vars.AUTH_ENTRA_CLIENT_ID }}
+          AUTH_ENTRA_SPA_CLIENT_ID: ${{ vars.AUTH_ENTRA_SPA_CLIENT_ID }}
+          AUTH_ENTRA_REQUIRED_SCOPE: ${{ vars.AUTH_ENTRA_REQUIRED_SCOPE }}
+          AUTH_ENTRA_REQUIRED_GROUP_ID: ${{ vars.AUTH_ENTRA_REQUIRED_GROUP_ID }}
+          AUTH_ENTRA_AUDIENCE: ${{ vars.AUTH_ENTRA_AUDIENCE }}
+          AUTH_ENTRA_API_SCOPE: ${{ vars.AUTH_ENTRA_API_SCOPE }}
+          ADDITIONAL_CORS_ORIGINS: ${{ vars.ADDITIONAL_CORS_ORIGINS }}
+          SQL_RUNTIME_CONNECTION_STRING: ${{ secrets.SQL_RUNTIME_CONNECTION_STRING }}
+        run: |
+          set -euo pipefail
+          az deployment group create -g "$RG" -n "eiwams-${ENV_NAME}-${STAGE}" \
+            --template-file "infra/main.${STAGE}.bicep" \
+            --parameters "infra/parameters/${ENV_NAME}.${STAGE}.bicepparam" \
+            --query properties.outputs -o json --only-show-errors > "$RUNNER_TEMP/outputs.json"
+          echo "Deployment eiwams-${ENV_NAME}-${STAGE} succeeded."
+
+      - name: Summarize outputs
+        if: ${{ inputs.apply }}
+        run: |
+          set -euo pipefail
+          o="$RUNNER_TEMP/outputs.json"
+          v() { jq -r --arg k "$1" '.[$k].value' "$o"; }
+          if [ "$STAGE" = "foundation" ]; then
+            storage_id=$(v storageAccountId); principal_id=$(v identityPrincipalId)
+            {
+              echo "### Foundation deployed (${ENV_NAME})"
+              echo
+              echo "| Output | Value |"
+              echo "|---|---|"
+              echo "| Runtime identity | \`$(v identityName)\` |"
+              echo "| Identity client ID | \`$(v identityClientId)\` |"
+              echo "| Identity principal (object) ID | \`$principal_id\` |"
+              echo "| Host storage | \`$(v storageAccountName)\` (container \`$(v deploymentContainerName)\`) |"
+              echo "| Storage scope | \`$storage_id\` |"
+              echo "| SQL server | \`$(v sqlServerFqdn)\` |"
+              echo "| SQL database | \`$(v sqlDatabaseName)\` |"
+              echo "| SQL Entra admin configured | $(v sqlEntraAdminConfigured) |"
+              echo
+              echo "#### Next: an Owner assigns these roles to the runtime identity on the storage scope"
+              echo
+              echo '```bash'
+              jq -r --arg p "$principal_id" --arg s "$storage_id" \
+                '.requiredStorageRoles.value[] | "# \(.name)\naz role assignment create --assignee-object-id \($p) --assignee-principal-type ServicePrincipal --role \(.id) --scope \($s)"' "$o"
+              echo '```'
+              echo
+              echo "Then run \`infra/sql/GrantRuntimeIdentity.sql\` in $(v sqlDatabaseName) as the SQL Entra admin with client ID \`$(v identityClientId)\`, and run stage 2-apps."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            {
+              echo "### Apps deployed (${ENV_NAME})"
+              echo
+              echo "| Output | Value |"
+              echo "|---|---|"
+              echo "| Function App | \`$(v functionAppName)\` |"
+              echo "| API base URL | $(v apiBaseUrl) |"
+              echo "| Web App | \`$(v webAppName)\` |"
+              echo "| Web URL | $(v webAppUrl) |"
+              echo "| Application Insights | \`$(v appInsightsName)\` |"
+              echo
+              echo "Set the '${ENV_NAME}' environment variables \`FUNCTION_APP_NAME=$(v functionAppName)\` and \`WEB_APP_NAME=$(v webAppName)\`,"
+              echo "and add \`$(v webAppUrl)\` as a SPA redirect URI on the EIWAMS-Web app registration."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          tail -n 30 "$GITHUB_STEP_SUMMARY"

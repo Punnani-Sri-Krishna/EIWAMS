@@ -1,0 +1,15 @@
+# Cloudflare Tunnel for EIWAMS
+# Location on the server: C:\ProgramData\cloudflared\config.yml (service) or %USERPROFILE%\.cloudflared\config.yml
+# Replace <TUNNEL-UUID> with the id printed by `cloudflared tunnel create eiwams`.
+tunnel: <TUNNEL-UUID>
+credentials-file: C:\ProgramData\cloudflared\<TUNNEL-UUID>.json
+
+ingress:
+  # IIS serves the SPA and proxies /api to the Functions host on 127.0.0.1:7274.
+  - hostname: eiwams.example.com
+    service: http://localhost:80
+    originRequest:
+      httpHostHeader: eiwams.example.com
+      connectTimeout: 30s
+  # Required catch-all.
+  - service: http_status:404

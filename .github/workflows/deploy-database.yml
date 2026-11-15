@@ -1,0 +1,228 @@
+name: Deploy database
+
+# Manual only. Applies EIWAMS.Infrastructure/SQL scripts with checksum tracking (dbo.SchemaMigrations)
+# via deploy/sql/Invoke-DbMigrations.ps1. Run "plan" first: it changes nothing.
+#
+# Identities (the SQL server admin is never used here):
+#   - Deploy identity (AZURE_CLIENT_ID): only opens/closes a temporary firewall rule for the runner IP.
+#   - Migration principal, first match wins:
+#       1. secret SQL_MIGRATION_CONNECTION_STRING  -> dedicated contained SQL user (fallback when Entra is unavailable)
+#       2. var SQL_MIGRATION_CLIENT_ID             -> dedicated Entra migration identity (needs its own federated credential)
+#       3. AZURE_CLIENT_ID                         -> the deploy identity, granted DB rights by infra/sql/GrantMigrationIdentity.sql
+#   None of them is the Function App runtime identity.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment (test/prod stay disabled until DEPLOYMENTS_ENABLED=true in that environment)
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+        default: dev
+      action:
+        description: plan = list pending scripts (read-only); apply = run pending/changed scripts; baseline = record scripts as applied without running them
+        type: choice
+        options:
+          - plan
+          - apply
+          - baseline
+        default: plan
+      include_admin_provisioning:
+        description: Include the named-administrator provisioning script (Invoke-DbMigrations -IncludeAdminProvisioning)
+        type: boolean
+        default: false
+      include_demo_data:
+        description: Include the demo data script (demo employees, cards, requests, events; dev only)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-database-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  SQLCMD_VERSION: v1.10.0
+
+jobs:
+  database:
+    name: ${{ inputs.action }} / ${{ inputs.environment }}
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      SQL_SERVER_NAME: ${{ vars.SQL_SERVER_NAME }}
+      SQL_DATABASE_NAME: ${{ vars.SQL_DATABASE_NAME }}
+
+    steps:
+      - name: Guard environment
+        if: ${{ inputs.environment != 'dev' && vars.DEPLOYMENTS_ENABLED != 'true' }}
+        run: |
+          echo "::error::Deployments to '${ENV_NAME}' are disabled. Set DEPLOYMENTS_ENABLED=true in the '${ENV_NAME}' GitHub environment first."
+          exit 1
+
+      - name: Guard demo data
+        if: ${{ inputs.include_demo_data && inputs.environment != 'dev' }}
+        run: |
+          echo "::error::Demo data is development-only and cannot be loaded into '${ENV_NAME}'."
+          exit 1
+
+      - name: Check configuration
+        id: cfg
+        env:
+          AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          MIGRATION_CLIENT_ID: ${{ vars.SQL_MIGRATION_CLIENT_ID }}
+          HAS_SQL_MIGRATION_CS: ${{ secrets.SQL_MIGRATION_CONNECTION_STRING != '' }}
+        run: |
+          missing=()
+          for v in AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID RG SQL_SERVER_NAME SQL_DATABASE_NAME; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing '${ENV_NAME}' environment variables: ${missing[*]} (RG=AZURE_RESOURCE_GROUP)."
+            exit 1
+          fi
+
+          server_name=${SQL_SERVER_NAME%%.*}
+          if [ "$HAS_SQL_MIGRATION_CS" = "true" ]; then
+            mode=sql; principal="contained SQL user from SQL_MIGRATION_CONNECTION_STRING"
+          elif [ -n "$MIGRATION_CLIENT_ID" ] && [ "${MIGRATION_CLIENT_ID,,}" != "${AZURE_CLIENT_ID,,}" ]; then
+            mode=entra-separate; principal="Entra migration identity $MIGRATION_CLIENT_ID"
+          else
+            mode=entra-deploy; principal="Entra deploy identity $AZURE_CLIENT_ID"
+          fi
+          echo "SQL server $server_name.database.windows.net / $SQL_DATABASE_NAME, migration principal: $principal"
+          {
+            echo "server_name=$server_name"
+            echo "server_fqdn=$server_name.database.windows.net"
+            echo "mode=$mode"
+            echo "rule=gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Database ${{ inputs.action }} (${ENV_NAME})"
+            echo
+            echo "- Target: \`$server_name.database.windows.net\` / \`$SQL_DATABASE_NAME\`"
+            echo "- Migration principal: $principal"
+            echo "- Admin provisioning: ${{ inputs.include_admin_provisioning }}; demo data: ${{ inputs.include_demo_data }}"
+            echo "- Commit: \`$GITHUB_SHA\` ($GITHUB_REF_NAME)"
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Install go-sqlcmd ${{ env.SQLCMD_VERSION }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/sqlcmd"
+          curl -fsSL "https://github.com/microsoft/go-sqlcmd/releases/download/${SQLCMD_VERSION}/sqlcmd-linux-amd64.tar.bz2" \
+            | tar -xj -C "$RUNNER_TEMP/sqlcmd"
+          "$RUNNER_TEMP/sqlcmd/sqlcmd" --version
+
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Open temporary firewall rule for this runner
+        id: firewall
+        env:
+          SERVER: ${{ steps.cfg.outputs.server_name }}
+          RULE: ${{ steps.cfg.outputs.rule }}
+        run: |
+          set -euo pipefail
+          ip=$(curl -fsS --max-time 15 https://api.ipify.org)
+          [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Could not determine the runner public IP."; exit 1; }
+          az sql server firewall-rule create -g "$RG" -s "$SERVER" -n "$RULE" \
+            --start-ip-address "$ip" --end-ip-address "$ip" --only-show-errors -o none
+          echo "created=true" >> "$GITHUB_OUTPUT"
+          echo "Firewall rule $RULE allows $ip on $SERVER. Waiting for propagation..."
+          sleep 20
+
+      - name: Azure login (OIDC, migration identity)
+        id: migration_login
+        if: ${{ steps.cfg.outputs.mode == 'entra-separate' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.SQL_MIGRATION_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Use only the migration identity for SQL tokens
+        if: ${{ steps.cfg.outputs.mode == 'entra-separate' }}
+        run: |
+          # Keep the CLI token cache to the identity that just signed in so sqlcmd cannot pick the deploy identity.
+          current=$(az account show --query user.name -o tsv)
+          for sp in $(az account list --query "[?user.name!='$current'].user.name" -o tsv | sort -u); do
+            az logout --username "$sp" 2>/dev/null || true
+          done
+          az account show --query "{user: user.name, type: user.type}" -o table
+
+      - name: Run migrations (${{ inputs.action }})
+        shell: pwsh
+        env:
+          ACTION: ${{ inputs.action }}
+          MODE: ${{ steps.cfg.outputs.mode }}
+          SERVER_FQDN: ${{ steps.cfg.outputs.server_fqdn }}
+          INCLUDE_ADMINS: ${{ inputs.include_admin_provisioning }}
+          INCLUDE_DEMO: ${{ inputs.include_demo_data }}
+          SQL_MIGRATION_CONNECTION_STRING: ${{ secrets.SQL_MIGRATION_CONNECTION_STRING }}
+        run: |
+          $params = @{
+            Server         = $env:SERVER_FQDN
+            Database       = $env:SQL_DATABASE_NAME
+            Action         = $env:ACTION
+            Sqlcmd         = Join-Path $env:RUNNER_TEMP 'sqlcmd/sqlcmd'
+            Authentication = 'ActiveDirectoryDefault'
+          }
+          if ($env:INCLUDE_ADMINS -eq 'true') { $params.IncludeAdminProvisioning = $true }
+          if ($env:INCLUDE_DEMO -eq 'true') { $params.IncludeDemoData = $true }
+
+          if ($env:MODE -eq 'sql') {
+            # Parse connection string with regex to extract User ID and Password
+            $cs = $env:SQL_MIGRATION_CONNECTION_STRING
+            $user = if ($cs -match '(?i)User\s*ID\s*=\s*([^;]+)') { $matches[1] }
+            $password = if ($cs -match '(?i)Password\s*=\s*([^;]+)') { $matches[1] }
+            if (-not $user -or -not $password) { throw 'SQL_MIGRATION_CONNECTION_STRING must contain User ID and Password.' }
+            Write-Host "::add-mask::$password"
+            $csServer = if ($cs -match '(?i)(?:Server|Data\s*Source|Address)\s*=\s*([^;]+)') { $matches[1] }
+            if ($csServer -and $csServer -notmatch [regex]::Escape($env:SERVER_FQDN)) {
+              Write-Host "::warning::SQL_MIGRATION_CONNECTION_STRING points at a different server; using $($env:SERVER_FQDN)."
+            }
+            $env:SQLCMDUSER = $user
+            $env:SQLCMDPASSWORD = $password
+            $params.Authentication = 'SqlPassword'
+          }
+
+          ./deploy/sql/Invoke-DbMigrations.ps1 @params
+
+      - name: Azure login (OIDC, deploy identity) for cleanup
+        if: ${{ always() && steps.firewall.outputs.created == 'true' && steps.migration_login.outcome != 'skipped' }}
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Remove temporary firewall rule
+        if: ${{ always() && steps.firewall.outputs.created == 'true' }}
+        env:
+          SERVER: ${{ steps.cfg.outputs.server_name }}
+          RULE: ${{ steps.cfg.outputs.rule }}
+        run: |
+          az sql server firewall-rule delete -g "$RG" -s "$SERVER" -n "$RULE" --only-show-errors \
+            && echo "Firewall rule $RULE removed." \
+            || echo "::warning::Could not remove firewall rule $RULE on $SERVER; delete it manually."

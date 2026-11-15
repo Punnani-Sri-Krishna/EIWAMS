@@ -1,0 +1,52 @@
+@use '@angular/material' as mat;
+
+html {
+  color-scheme: light;
+  @include mat.theme((
+    color: (
+      primary: mat.$azure-palette,
+      tertiary: mat.$cyan-palette,
+      theme-type: light,
+    ),
+    typography: (
+      plain-family: 'Inter, Roboto, sans-serif',
+      brand-family: 'Inter, Roboto, sans-serif',
+    ),
+    density: 0,
+  ));
+
+  @include mat.theme-overrides((
+    primary: #0b3c5d,
+    on-primary: #ffffff,
+    primary-container: #d3e7f5,
+    on-primary-container: #0b3c5d,
+    secondary: #0fa3b1,
+    on-secondary: #ffffff,
+    tertiary: #5b5bd6,
+    on-tertiary: #ffffff,
+    error: #d7263d,
+    on-error: #ffffff,
+    background: #f4f8fb,
+    surface: #ffffff,
+    on-surface: #10212e,
+    surface-container: #ffffff,
+    surface-container-low: #f8fbfd,
+    surface-container-high: #eef3f7,
+  ));
+}
+
+.mat-mdc-snack-bar-container.snack-success {
+  --mat-snack-bar-container-color: var(--lab-success);
+  --mat-snack-bar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+
+.mat-mdc-snack-bar-container.snack-error {
+  --mat-snack-bar-container-color: var(--lab-danger);
+  --mat-snack-bar-supporting-text-color: #ffffff;
+  --mat-snack-bar-button-color: #ffffff;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}

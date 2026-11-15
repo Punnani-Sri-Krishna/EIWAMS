@@ -1,0 +1,230 @@
+name: Deploy API
+
+# Manual only. Builds the selected branch commit and deploys it to the Flex Consumption Function App.
+# App settings are owned by "Deploy infrastructure" (stage 2-apps); this workflow never changes them.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment (test/prod stay disabled until DEPLOYMENTS_ENABLED=true in that environment)
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-api-${{ inputs.environment }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Publish API (.NET 10)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish
+        run: dotnet publish EIWAMS.API/EIWAMS.API.csproj -c Release -o "${{ runner.temp }}/api"
+
+      - name: Verify package layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          pkg="${{ runner.temp }}/api"
+          for f in host.json EIWAMS.API.dll functions.metadata; do
+            [ -f "$pkg/$f" ] || { echo "::error::$f is missing from the package root."; exit 1; }
+          done
+          echo "Package root OK ($(find "$pkg" -type f | wc -l) files)."
+
+      - name: Upload package
+        uses: actions/upload-artifact@v7
+        with:
+          name: eiwams-api-${{ github.run_id }}
+          path: ${{ runner.temp }}/api
+          include-hidden-files: true
+          retention-days: 3
+
+  deploy:
+    name: Deploy to ${{ inputs.environment }}
+    needs: build
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ENV_NAME: ${{ inputs.environment }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      FUNCTION_APP_NAME: ${{ vars.FUNCTION_APP_NAME }}
+      DEPLOY_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+
+    steps:
+      - name: Guard environment
+        if: ${{ inputs.environment != 'dev' && vars.DEPLOYMENTS_ENABLED != 'true' }}
+        run: |
+          echo "::error::Deployments to '${ENV_NAME}' are disabled. Set DEPLOYMENTS_ENABLED=true in the '${ENV_NAME}' GitHub environment first."
+          exit 1
+
+      - name: Check required variables
+        env:
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          missing=()
+          for v in DEPLOY_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID RG FUNCTION_APP_NAME; do
+            [ -n "${!v}" ] || missing+=("$v")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing '${ENV_NAME}' environment variables: ${missing[*]} (DEPLOY_CLIENT_ID=AZURE_CLIENT_ID, RG=AZURE_RESOURCE_GROUP)."
+            exit 1
+          fi
+
+      - name: Download package
+        uses: actions/download-artifact@v8
+        with:
+          name: eiwams-api-${{ github.run_id }}
+          path: ${{ runner.temp }}/api
+
+      - name: Azure login (OIDC, deploy identity)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Verify Function App (Flex plan, settings, runtime identity)
+        id: app
+        env:
+          HAS_SQL_FALLBACK_SECRET: ${{ secrets.SQL_RUNTIME_CONNECTION_STRING != '' }}
+        run: |
+          set -euo pipefail
+          app=$(az functionapp show -g "$RG" -n "$FUNCTION_APP_NAME" -o json 2>/dev/null) || {
+            echo "::error::Function App '$FUNCTION_APP_NAME' was not found in '$RG'. Run Deploy infrastructure stage 2-apps and set FUNCTION_APP_NAME to its output."
+            exit 1
+          }
+          app_id=$(jq -r '.id' <<<"$app")
+          plan_id=$(jq -r '.serverFarmId // .properties.serverFarmId' <<<"$app")
+
+          # `az functionapp show` may use an older Microsoft.Web API version that omits functionAppConfig and
+          # defaultHostName for Flex Consumption apps, so read them with an explicit API version.
+          site=$(az resource show --ids "$app_id" --api-version 2024-04-01 -o json) || {
+            echo "::error::Could not read $FUNCTION_APP_NAME with Microsoft.Web API version 2024-04-01."
+            exit 1
+          }
+          fac=$(jq -c '.properties.functionAppConfig // null' <<<"$site")
+          host=$(jq -r '.properties.defaultHostName // ([.properties.enabledHostNames[]? | select(contains(".scm.") | not)][0]) // empty' <<<"$site")
+          plan_sku=$(az resource show --ids "$plan_id" --api-version 2024-04-01 --query sku.tier -o tsv 2>/dev/null || true)
+
+          if [ -z "$host" ]; then
+            echo "::error::Could not resolve the default hostname of $FUNCTION_APP_NAME."
+            exit 1
+          fi
+
+          if [ -z "$fac" ] || [ "$fac" = "null" ]; then
+            echo "::error::$FUNCTION_APP_NAME has no functionAppConfig (plan SKU tier: ${plan_sku:-unknown}). It must be on a Flex Consumption plan; run 'Deploy infrastructure' stage 2-apps with apply=true."
+            exit 1
+          fi
+          if [ "$plan_sku" != "FlexConsumption" ]; then
+            echo "::warning::Plan SKU tier reported as '${plan_sku:-unknown}' (expected FlexConsumption)."
+          fi
+
+          runtime=$(jq -r '.runtime | "\(.name) \(.version)"' <<<"$fac")
+          echo "Function App $FUNCTION_APP_NAME: https://$host (Flex Consumption, $runtime)"
+          echo "host=$host" >> "$GITHUB_OUTPUT"
+
+          # Setting names only; values are never printed.
+          names=$(az functionapp config appsettings list -g "$RG" -n "$FUNCTION_APP_NAME" --query "[].name" -o tsv)
+          missing=()
+          for s in AzureWebJobsStorage__accountName AzureWebJobsStorage__credential AzureWebJobsStorage__clientId \
+                   APPLICATIONINSIGHTS_CONNECTION_STRING Auth__Mode Auth__Entra__TenantId Auth__Entra__ClientId \
+                   Auth__Entra__SpaClientId SqlConnectionString; do
+            grep -qx "$s" <<<"$names" || missing+=("$s")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing app settings: ${missing[*]}. Re-run Deploy infrastructure stage 2-apps with apply."
+            exit 1
+          fi
+
+          mode=$(az functionapp config appsettings list -g "$RG" -n "$FUNCTION_APP_NAME" --query "[?name=='Auth__Mode'].value | [0]" -o tsv)
+          [ "$mode" = "EntraId" ] || { echo "::error::Auth__Mode is '$mode'; expected EntraId."; exit 1; }
+
+          uses_mi=$(az functionapp config appsettings list -g "$RG" -n "$FUNCTION_APP_NAME" \
+            --query "[?name=='SqlConnectionString'] | [0].contains(value, 'Active Directory Managed Identity')" -o tsv)
+          sql_mode=$([ "$uses_mi" = "true" ] && echo "managed identity" || echo "SQL authentication (SQL_RUNTIME_CONNECTION_STRING)")
+          echo "SQL runtime authentication: $sql_mode"
+          if [ "$uses_mi" = "true" ] && [ "$HAS_SQL_FALLBACK_SECRET" = "true" ]; then
+            echo "::warning::SQL_RUNTIME_CONNECTION_STRING is set but the app uses the managed identity. Re-run Deploy infrastructure stage 2-apps to apply the secret, or delete the secret."
+          elif [ "$uses_mi" != "true" ] && [ "$HAS_SQL_FALLBACK_SECRET" != "true" ]; then
+            echo "::warning::The app uses a SQL-authentication connection string but SQL_RUNTIME_CONNECTION_STRING is not set; the next stage 2-apps run will switch it to the managed identity."
+          fi
+
+          runtime_client_id=$(az functionapp config appsettings list -g "$RG" -n "$FUNCTION_APP_NAME" \
+            --query "[?name=='AzureWebJobsStorage__clientId'].value | [0]" -o tsv)
+          attached=$(jq -r '.identity.userAssignedIdentities // {} | [.[].clientId] | join(" ")' <<<"$app")
+          if ! grep -qw -- "$runtime_client_id" <<<"$attached"; then
+            echo "::error::The runtime identity ($runtime_client_id) is not attached to $FUNCTION_APP_NAME."
+            exit 1
+          fi
+          if [ "${runtime_client_id,,}" = "${DEPLOY_CLIENT_ID,,}" ]; then
+            echo "::error::The Function App runs as the GitHub deploy identity. Use the separate runtime identity from stage 1."
+            exit 1
+          fi
+          echo "Runtime identity $runtime_client_id is attached and separate from the deploy identity."
+
+          {
+            echo "### API deployment target"
+            echo
+            echo "| Item | Value |"
+            echo "|---|---|"
+            echo "| Function App | \`$FUNCTION_APP_NAME\` |"
+            echo "| Host | https://$host |"
+            echo "| Plan / runtime | Flex Consumption / $runtime |"
+            echo "| Auth mode | $mode |"
+            echo "| SQL runtime auth | $sql_mode |"
+            echo "| Commit | \`$GITHUB_SHA\` ($GITHUB_REF_NAME) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Deploy to Flex Consumption
+        uses: Azure/functions-action@v1
+        with:
+          app-name: ${{ vars.FUNCTION_APP_NAME }}
+          package: ${{ runner.temp }}/api
+          sku: flexconsumption
+
+      - name: Smoke test GET /api/auth/config
+        env:
+          HOST: ${{ steps.app.outputs.host }}
+        run: |
+          set -uo pipefail
+          url="https://$HOST/api/auth/config"
+          for attempt in $(seq 1 12); do
+            code=$(curl -sS -o "$RUNNER_TEMP/config.json" -w '%{http_code}' --max-time 30 "$url" || echo 000)
+            if [ "$code" = "200" ] && jq -e '.success == true and .data.mode == "EntraId" and (.data.spaClientId | length > 0)' "$RUNNER_TEMP/config.json" >/dev/null 2>&1; then
+              echo "GET $url -> 200, mode EntraId (attempt $attempt)."
+              jq '{success, message, data: {mode: .data.mode, tenantId: .data.tenantId, spaClientId: .data.spaClientId, apiScope: .data.apiScope, authority: .data.authority}}' "$RUNNER_TEMP/config.json"
+              echo "Smoke test passed: GET /api/auth/config returned EntraId configuration." >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Attempt $attempt: HTTP $code. Retrying in 15s..."
+            sleep 15
+          done
+          echo "::error::GET $url did not return the EntraId auth configuration. Last response:"
+          head -c 2000 "$RUNNER_TEMP/config.json" 2>/dev/null || true
+          exit 1
