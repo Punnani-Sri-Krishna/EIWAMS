@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="EIWAMS.API/EIWAMS.API.csproj" />
+  <Project Path="EIWAMS.Application/EIWAMS.Application.csproj" Id="a7fb7c9f-311b-40a4-9562-99ce177c6338" />
+  <Project Path="EIWAMS.Domain/EIWAMS.Domain.csproj" Id="81368822-50e0-49c8-b742-d20f23ba9a9b" />
+  <Project Path="EIWAMS.Infrastructure/EIWAMS.Infrastructure.csproj" Id="559c2cca-f7a3-4951-8f72-f183aa8319ac" />
+  <Project Path="EIWAMS.Tests/EIWAMS.Tests.csproj" Id="24c4f7e3-2e4e-48a8-ad56-1e27bad57449" />
+</Solution>

@@ -1,0 +1,36 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.rsuser
+.vs/
+TestResults/
+*.trx
+*.coverage
+coverage*.xml
+
+# Azure Functions local secrets
+local.settings.json
+appsettings.*.local.json
+
+# Angular / Node
+node_modules/
+dist/
+.angular/
+out-tsc/
+coverage/
+npm-debug.log*
+.sass-cache/
+
+# Deployment output and secrets
+deploy/out/
+*.pfx
+*.bak
+cloudflared/*.json
+
+# Editors / OS
+.idea/
+*.swp
+Thumbs.db
+.DS_Store

@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "EIWAMS.API": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7274",
+      "launchBrowser": false
+    }
+  }
+}

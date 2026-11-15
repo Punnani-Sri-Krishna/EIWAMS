@@ -1,0 +1,4504 @@
+{
+  "info": {
+    "_postman_id": "8a4f3c51-2f0e-4c1e-9d7a-5e1d0e7a1a01",
+    "name": "EIWAMS API",
+    "description": "Employee Identity & Workplace Access Management System API (v1). Local runs use Auth:Mode=DevHeader; switch users with the X-User-Id header (1 System Admin, 2 HR, 3 Manager, 4 Security, 5 Facility Admin, 6 Reception, 7 Employee (Esha), 8 Auditor). Run folders top to bottom: later requests reuse ids captured by earlier ones.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get(\"validFromUtc\")) {",
+          "  const day = 24 * 3600 * 1000;",
+          "  pm.collectionVariables.set(\"validFromUtc\", new Date(Date.now() + day).toISOString());",
+          "  pm.collectionVariables.set(\"validToUtc\", new Date(Date.now() + 30 * day).toISOString());",
+          "}",
+          "pm.collectionVariables.set(\"visitorPassToUtc\", new Date(Date.now() + 4 * 3600 * 1000).toISOString());"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "employeeId",
+      "value": ""
+    },
+    {
+      "key": "employeeVersion",
+      "value": ""
+    },
+    {
+      "key": "cardId",
+      "value": ""
+    },
+    {
+      "key": "cardVersion",
+      "value": ""
+    },
+    {
+      "key": "newCardId",
+      "value": ""
+    },
+    {
+      "key": "newCardVersion",
+      "value": ""
+    },
+    {
+      "key": "cardRequestId",
+      "value": ""
+    },
+    {
+      "key": "accessRequestId",
+      "value": ""
+    },
+    {
+      "key": "accessRequestVersion",
+      "value": ""
+    },
+    {
+      "key": "permissionId",
+      "value": ""
+    },
+    {
+      "key": "notificationId",
+      "value": ""
+    },
+    {
+      "key": "violationId",
+      "value": ""
+    },
+    {
+      "key": "incidentId",
+      "value": ""
+    },
+    {
+      "key": "incidentVersion",
+      "value": ""
+    },
+    {
+      "key": "visitorId",
+      "value": ""
+    },
+    {
+      "key": "visitorPassId",
+      "value": ""
+    },
+    {
+      "key": "visitorPassToUtc",
+      "value": ""
+    },
+    {
+      "key": "revokePassId",
+      "value": ""
+    },
+    {
+      "key": "cancelRequestId",
+      "value": ""
+    },
+    {
+      "key": "cancelRequestVersion",
+      "value": ""
+    },
+    {
+      "key": "grantedPermissionIds",
+      "value": ""
+    },
+    {
+      "key": "blacklistId",
+      "value": ""
+    },
+    {
+      "key": "adminUserId",
+      "value": ""
+    },
+    {
+      "key": "departmentId",
+      "value": ""
+    },
+    {
+      "key": "locationId",
+      "value": ""
+    },
+    {
+      "key": "readerId",
+      "value": ""
+    },
+    {
+      "key": "validFromUtc",
+      "value": ""
+    },
+    {
+      "key": "validToUtc",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Identity",
+      "item": [
+        {
+          "name": "GET auth/config (GetAuthConfig)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetAuthConfig returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "config"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dev/users (GetDevUsers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDevUsers returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dev/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dev",
+                "users"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/me (GetMe)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetMe returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/me/menu (GetMyMenu)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetMyMenu returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/me/menu",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "me",
+                "menu"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/lookups (GetLookups)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetLookups returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/lookups",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "lookups"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/notifications (GetNotifications)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetNotifications returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.items[0].notificationId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"notificationId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/notifications?unreadOnly=false&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notifications"
+              ],
+              "query": [
+                {
+                  "key": "unreadOnly",
+                  "value": "false"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/notifications/unread-count (GetUnreadNotificationCount)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetUnreadNotificationCount returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/notifications/unread-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "unread-count"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/notifications/{id:long}/read (MarkNotificationRead)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"MarkNotificationRead returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/notifications/{{notificationId}}/read",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "{{notificationId}}",
+                "read"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/notifications/read-all (MarkAllNotificationsRead)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"MarkAllNotificationsRead returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/notifications/read-all",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "notifications",
+                "read-all"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Employees",
+      "item": [
+        {
+          "name": "GET v1/employees (SearchEmployees)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchEmployees returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees?search=Patel&employmentStatus=Active&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Patel"
+                },
+                {
+                  "key": "employmentStatus",
+                  "value": "Active"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/employees (CreateEmployee)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateEmployee returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.employeeId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"employeeId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"employeeVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeNumber\": \"EMP{{$randomInt}}{{$randomInt}}\",\n  \"firstName\": \"Ananya\",\n  \"lastName\": \"Iyer\",\n  \"workEmail\": \"ananya.iyer.{{$randomInt}}@eiwams.example.com\",\n  \"employeeType\": \"Permanent\",\n  \"departmentId\": 1,\n  \"managerEmployeeId\": 1,\n  \"locationId\": 7,\n  \"joinDate\": \"2026-01-05\",\n  \"endDate\": null,\n  \"userId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/employees/{id:int} (GetEmployee)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetEmployee returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"employeeVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{employeeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{employeeId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT v1/employees/{id:int} (UpdateEmployee)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateEmployee returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{employeeId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{employeeId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Ananya\",\n  \"lastName\": \"Iyer-Rao\",\n  \"workEmail\": \"ananya.iyer.{{$randomInt}}@eiwams.example.com\",\n  \"employeeType\": \"Permanent\",\n  \"departmentId\": 1,\n  \"managerEmployeeId\": 1,\n  \"locationId\": 7,\n  \"joinDate\": \"2026-01-05\",\n  \"endDate\": null,\n  \"userId\": null,\n  \"version\": \"{{employeeVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/employees/{id:int}/transfer (TransferEmployee)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"TransferEmployee returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{employeeId}}/transfer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{employeeId}}",
+                "transfer"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departmentId\": 2,\n  \"managerEmployeeId\": 1,\n  \"locationId\": 8,\n  \"effectiveDate\": \"2026-02-01\",\n  \"reason\": \"Project reallocation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/employees/{id:int}/cards (GetEmployeeCards)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetEmployeeCards returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{eshaEmployeeId}}/cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{eshaEmployeeId}}",
+                "cards"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/employees/{id:int}/history (GetEmployeeHistory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetEmployeeHistory returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{employeeId}}/history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{employeeId}}",
+                "history"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Cards",
+      "item": [
+        {
+          "name": "GET v1/cards (SearchCards)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchCards returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards?status=Active&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Active"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards (CreateCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateCard returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.cardId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"cardUid\": \"04C9{{$randomInt}}{{$randomInt}}{{$randomInt}}\",\n  \"cardType\": \"Permanent\",\n  \"expiresAtUtc\": null,\n  \"cardRequestId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards/{id:long}/activate (ActivateCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ActivateCard returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards/{{cardId}}/activate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards",
+                "{{cardId}}",
+                "activate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"{{cardVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards/{id:long}/report-lost (ReportLostCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ReportLostCard returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards/{{cardId}}/report-lost",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards",
+                "{{cardId}}",
+                "report-lost"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Card lost during commute\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards/{id:long}/replace (ReplaceCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ReplaceCard returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.cardId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"newCardId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"newCardVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards/{{cardId}}/replace",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards",
+                "{{cardId}}",
+                "replace"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"newCardUid\": \"04D7{{$randomInt}}{{$randomInt}}{{$randomInt}}\",\n  \"reason\": \"Replacement for lost card\",\n  \"version\": \"{{cardVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards/{id:long}/block (BlockCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"BlockCard returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"newCardVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards/{{newCardId}}/block",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards",
+                "{{newCardId}}",
+                "block"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Suspicious activity reported\",\n  \"version\": \"{{newCardVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/cards/{id:long}/deactivate (DeactivateCard)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DeactivateCard returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/cards/{{newCardId}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "cards",
+                "{{newCardId}}",
+                "deactivate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Employee exit\",\n  \"version\": \"{{newCardVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/card-requests (SearchCardRequests)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchCardRequests returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/card-requests?status=Submitted&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "card-requests"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Submitted"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/card-requests (CreateCardRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateCardRequest returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.cardRequestId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardRequestId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/card-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "card-requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"requestType\": \"Temporary\",\n  \"oldCardId\": null,\n  \"reason\": \"Forgot permanent card at home\",\n  \"requestedValidToUtc\": \"{{validToUtc}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/card-requests/{id:long}/decision (DecideCardRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DecideCardRequest returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/card-requests/{{cardRequestId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "card-requests",
+                "{{cardRequestId}}",
+                "decision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Verify\",\n  \"comments\": \"Identity verified at desk\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/employees/{id:int}/deactivate (DeactivateEmployee)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DeactivateEmployee returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{hrUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/employees/{{employeeId}}/deactivate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "employees",
+                "{{employeeId}}",
+                "deactivate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employmentStatus\": \"Exited\",\n  \"endDate\": \"2026-12-31\",\n  \"reason\": \"Resigned\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Access",
+      "item": [
+        {
+          "name": "GET v1/access-requests (SearchAccessRequests)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchAccessRequests returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests?mine=true&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests"
+              ],
+              "query": [
+                {
+                  "key": "mine",
+                  "value": "true"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/access-requests (CreateAccessRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateAccessRequest returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.accessRequestId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"locationId\": 10,\n  \"businessJustification\": \"Prototype validation in the R&D lab\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"submit\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/access-requests/{id:long} (GetAccessRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetAccessRequest returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests/{{accessRequestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests",
+                "{{accessRequestId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT v1/access-requests/{id:long} (UpdateAccessRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateAccessRequest returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests/{{accessRequestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests",
+                "{{accessRequestId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"locationId\": 10,\n  \"businessJustification\": \"Prototype validation in the R&D lab (updated)\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/access-requests/{id:long}/submit (SubmitAccessRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SubmitAccessRequest returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests/{{accessRequestId}}/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests",
+                "{{accessRequestId}}",
+                "submit"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/approvals/pending (GetPendingApprovals)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetPendingApprovals returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{managerUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/pending?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "pending"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/approvals/{accessRequestId:long}/decision (DecideApproval)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DecideApproval returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{managerUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/{{accessRequestId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "{{accessRequestId}}",
+                "decision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approve\",\n  \"comments\": \"Approved by line manager\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stage 1 of 3 (Manager)."
+          }
+        },
+        {
+          "name": "POST v1/approvals/{accessRequestId:long}/decision (DecideApproval - Security)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DecideApproval returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/{{accessRequestId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "{{accessRequestId}}",
+                "decision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approve\",\n  \"comments\": \"Security clearance verified\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stage 2 of 3 (Security)."
+          }
+        },
+        {
+          "name": "POST v1/approvals/{accessRequestId:long}/decision (DecideApproval - FacilityAdmin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"DecideApproval returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"accessRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{facilityAdminUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/approvals/{{accessRequestId}}/decision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "approvals",
+                "{{accessRequestId}}",
+                "decision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"Approve\",\n  \"comments\": \"Capacity available\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Stage 3 of 3 (FacilityAdmin); the request becomes Approved."
+          }
+        },
+        {
+          "name": "POST v1/permissions/provision (ProvisionPermission)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ProvisionPermission returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.permissionId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"permissionId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{facilityAdminUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/permissions/provision",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "permissions",
+                "provision"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accessRequestId\": {{accessRequestId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Requires the request to be fully Approved (all three stages)."
+          }
+        },
+        {
+          "name": "GET v1/permissions (SearchPermissions)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchPermissions returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{facilityAdminUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/permissions?status=Active&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "permissions"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Active"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/permissions/{id:long}/revoke (RevokePermission)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"RevokePermission returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{facilityAdminUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/permissions/{{permissionId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "permissions",
+                "{{permissionId}}",
+                "revoke"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Project completed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/access-requests (CreateAccessRequest - ToCancel)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateAccessRequest returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.accessRequestId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cancelRequestId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cancelRequestVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"locationId\": 9,\n  \"businessJustification\": \"Quarterly planning sessions on floor 5\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"submit\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/access-requests/{id:long}/cancel (CancelAccessRequest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CancelAccessRequest returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{eshaUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/access-requests/{{cancelRequestId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "access-requests",
+                "{{cancelRequestId}}",
+                "cancel"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"No longer required\",\n  \"version\": \"{{cancelRequestVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Visitors",
+      "item": [
+        {
+          "name": "GET v1/visitors (SearchVisitors)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchVisitors returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitors?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitors"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitors (CreateVisitor)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateVisitor returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.visitorId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"visitorId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitors",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitors"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Rahul Khanna\",\n  \"organization\": \"Infosys Ltd\",\n  \"contactReference\": \"+91-98450-00000\",\n  \"visitPurpose\": \"Vendor meeting\",\n  \"sponsorUserId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/visitor-passes (SearchVisitorPasses)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchVisitorPasses returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes (CreateVisitorPass)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateVisitorPass returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.visitorPassId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"visitorPassId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visitorId\": {{visitorId}},\n  \"locationId\": 5,\n  \"validFromUtc\": \"{{$isoTimestamp}}\",\n  \"validToUtc\": \"{{visitorPassToUtc}}\",\n  \"sponsorUserId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes/{id:long}/approve (ApproveVisitorPass)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ApproveVisitorPass returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{facilityAdminUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes",
+                "{{visitorPassId}}",
+                "approve"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"comments\": \"Approved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes/{id:long}/check-in (CheckInVisitorPass)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CheckInVisitorPass returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/check-in",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes",
+                "{{visitorPassId}}",
+                "check-in"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes/{id:long}/check-out (CheckOutVisitorPass)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CheckOutVisitorPass returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes/{{visitorPassId}}/check-out",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes",
+                "{{visitorPassId}}",
+                "check-out"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes (CreateVisitorPass - ToRevoke)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateVisitorPass returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.visitorPassId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"revokePassId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"visitorId\": {{visitorId}},\n  \"locationId\": 5,\n  \"validFromUtc\": \"{{$isoTimestamp}}\",\n  \"validToUtc\": \"{{visitorPassToUtc}}\",\n  \"sponsorUserId\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/visitor-passes/{id:long}/revoke (RevokeVisitorPass)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"RevokeVisitorPass returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{receptionUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/visitor-passes/{{revokePassId}}/revoke",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "visitor-passes",
+                "{{revokePassId}}",
+                "revoke"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Visit cancelled\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "RFID & Security",
+      "item": [
+        {
+          "name": "POST v1/rfid/events (IngestRfidEvent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"IngestRfidEvent returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/rfid/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "rfid",
+                "events"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"readerId\": \"RDR-BLR-ODC1-01\",\n  \"externalEventId\": \"evt-{{$guid}}\",\n  \"cardUid\": \"04A10000000007\",\n  \"eventType\": \"Entry\",\n  \"eventAtUtc\": \"{{$isoTimestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/rfid/events (SearchRfidEvents)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchRfidEvents returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/rfid/events?decision=Denied&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "rfid",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "decision",
+                  "value": "Denied"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/violations (SearchViolations)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchViolations returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.items[0].violationId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"violationId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/violations?status=Open&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "violations"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "Open"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/violations/{id:long}/review (ReviewViolation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ReviewViolation returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/violations/{{violationId}}/review",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "violations",
+                "{{violationId}}",
+                "review"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Confirmed\",\n  \"reviewNotes\": \"Verified with CCTV footage\",\n  \"createIncident\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/incidents (SearchIncidents)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchIncidents returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/incidents?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "incidents"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/incidents (CreateIncident)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateIncident returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.incidentId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"incidentId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"incidentVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/incidents",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "incidents"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Tailgating at ODC1\",\n  \"description\": \"Two people entered on a single swipe.\",\n  \"incidentType\": \"Tailgating\",\n  \"severity\": \"High\",\n  \"violationId\": null,\n  \"locationId\": 7,\n  \"assignedToUserId\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/incidents/{id:int} (GetIncident)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetIncident returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"incidentVersion\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/incidents/{{incidentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "incidents",
+                "{{incidentId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PATCH v1/incidents/{id:int} (UpdateIncident)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateIncident returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/incidents/{{incidentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "incidents",
+                "{{incidentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"UnderReview\",\n  \"assignedToUserId\": 4,\n  \"resolution\": null,\n  \"note\": \"Reviewing CCTV\",\n  \"version\": \"{{incidentVersion}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/blacklist (SearchBlacklist)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchBlacklist returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/blacklist?isActive=true&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "blacklist"
+              ],
+              "query": [
+                {
+                  "key": "isActive",
+                  "value": "true"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/blacklist (CreateBlacklistEntry)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateBlacklistEntry returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.blacklistId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"blacklistId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/blacklist",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "blacklist"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subjectType\": \"Visitor\",\n  \"subjectId\": {{visitorId}},\n  \"reason\": \"Repeated policy violations\",\n  \"reviewDate\": \"2027-06-30\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST v1/blacklist/{id:int}/lift (LiftBlacklistEntry)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"LiftBlacklistEntry returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{securityUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/blacklist/{{blacklistId}}/lift",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "blacklist",
+                "{{blacklistId}}",
+                "lift"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Review completed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "GET v1/dashboard/summary (GetDashboardSummary)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardSummary returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "summary"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/events-trend (GetDashboardEventsTrend)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardEventsTrend returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/events-trend?days=14",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "events-trend"
+              ],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "14"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/requests-by-status (GetDashboardRequestsByStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardRequestsByStatus returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/requests-by-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "requests-by-status"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/violations-by-type (GetDashboardViolationsByType)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardViolationsByType returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/violations-by-type",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "violations-by-type"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/cards-by-status (GetDashboardCardsByStatus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardCardsByStatus returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/cards-by-status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "cards-by-status"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/occupancy (GetDashboardOccupancy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardOccupancy returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/occupancy",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "occupancy"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/my-work (GetDashboardMyWork)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardMyWork returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{managerUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/my-work",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "my-work"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/dashboard/activity (GetDashboardActivity)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDashboardActivity returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dashboard/activity?top=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dashboard",
+                "activity"
+              ],
+              "query": [
+                {
+                  "key": "top",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Reports & Audit",
+      "item": [
+        {
+          "name": "GET v1/reports/{reportName} (GetReport)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetReport returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{auditorUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reports/access-activity?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports",
+                "access-activity"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/reports/{reportName}/export (ExportReport)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"ExportReport returns 200\", function () { pm.response.to.have.status(200); });",
+                  "pm.test(\"CSV content\", function () { pm.expect(pm.response.headers.get(\"Content-Type\")).to.include(\"text/csv\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{auditorUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/reports/access-activity/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "reports",
+                "access-activity",
+                "export"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/audit-logs (SearchAuditLogs)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SearchAuditLogs returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{auditorUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/audit-logs?page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "audit-logs"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/audit-logs/timeline (GetAuditTimeline)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetAuditTimeline returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{auditorUserId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/audit-logs/timeline?entityType=AccessRequest&entityId={{accessRequestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "audit-logs",
+                "timeline"
+              ],
+              "query": [
+                {
+                  "key": "entityType",
+                  "value": "AccessRequest"
+                },
+                {
+                  "key": "entityId",
+                  "value": "{{accessRequestId}}"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin & Reference",
+      "item": [
+        {
+          "name": "GET v1/admin/users (GetAdminUsers)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetAdminUsers returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/users?isActive=true&page=1&pageSize=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "isActive",
+                  "value": "true"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "20"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/admin/users (CreateAdminUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateAdminUser returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.userId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"adminUserId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "users"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Neha Kulkarni\",\n  \"email\": \"neha.kulkarni.{{$randomInt}}@eiwams.example.com\",\n  \"entraObjectId\": null,\n  \"isActive\": true,\n  \"allFacilities\": false,\n  \"roleIds\": [\n    1\n  ],\n  \"facilityIds\": [\n    1\n  ],\n  \"employeeId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT v1/admin/users/{id:int} (UpdateAdminUser)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateAdminUser returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/users/{{adminUserId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "users",
+                "{{adminUserId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"displayName\": \"Neha Kulkarni\",\n  \"email\": \"neha.kulkarni.{{$randomInt}}@eiwams.example.com\",\n  \"entraObjectId\": null,\n  \"isActive\": true,\n  \"allFacilities\": false,\n  \"roleIds\": [\n    1,\n    3\n  ],\n  \"facilityIds\": [\n    1\n  ],\n  \"employeeId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/admin/roles (GetRoles)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetRoles returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "roles"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/admin/roles/{id:int}/permissions (GetRolePermissions)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetRolePermissions returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "pm.collectionVariables.set(\"grantedPermissionIds\", JSON.stringify(json.data.filter(function (p) { return p.granted; }).map(function (p) { return p.permissionId; })));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/roles/{{roleId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "roles",
+                "{{roleId}}",
+                "permissions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT v1/admin/roles/{id:int}/permissions (SetRolePermissions)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"SetRolePermissions returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/roles/{{roleId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "roles",
+                "{{roleId}}",
+                "permissions"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"permissionIds\": {{grantedPermissionIds}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Replaces the role's grant list; the sample re-applies the grants read by GetRolePermissions (idempotent)."
+          }
+        },
+        {
+          "name": "GET v1/admin/permissions (GetPermissionCatalog)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetPermissionCatalog returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "permissions"
+              ]
+            }
+          }
+        },
+        {
+          "name": "GET v1/departments (GetDepartments)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetDepartments returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "departments"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/departments (CreateDepartment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateDepartment returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.departmentId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"departmentId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/departments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "departments"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departmentCode\": \"D{{$randomInt}}\",\n  \"departmentName\": \"Data Science\",\n  \"headUserId\": null,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT v1/departments/{id:int} (UpdateDepartment)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateDepartment returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/departments/{{departmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "departments",
+                "{{departmentId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"departmentCode\": \"D{{$randomInt}}\",\n  \"departmentName\": \"Data Science & AI\",\n  \"headUserId\": null,\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/locations (GetLocations)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetLocations returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/locations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "locations"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/locations (CreateLocation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateLocation returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.locationId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"locationId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/locations",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "locations"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentLocationId\": 2,\n  \"locationCode\": \"BLR-TA-L{{$randomInt}}\",\n  \"locationName\": \"Innovation Lab\",\n  \"locationType\": \"Zone\",\n  \"isRestricted\": true,\n  \"isActive\": true,\n  \"timeZone\": \"India Standard Time\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT v1/locations/{id:int} (UpdateLocation)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateLocation returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/locations/{{locationId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "locations",
+                "{{locationId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentLocationId\": 2,\n  \"locationCode\": \"BLR-TA-L{{$randomInt}}\",\n  \"locationName\": \"Innovation Lab 2\",\n  \"locationType\": \"Zone\",\n  \"isRestricted\": true,\n  \"isActive\": true,\n  \"timeZone\": \"India Standard Time\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/readers (GetReaders)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetReaders returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/readers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "readers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "POST v1/readers (CreateReader)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"CreateReader returns 201\", function () { pm.response.to.have.status(201); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
+                  "try { const v = json.data.readerId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"readerId\", v); } } catch (e) {}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/readers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "readers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"readerId\": \"RDR-TEST-{{$randomInt}}\",\n  \"readerName\": \"Innovation Lab Door\",\n  \"locationId\": {{locationId}},\n  \"direction\": \"Both\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "PUT v1/readers/{readerId} (UpdateReader)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateReader returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/readers/{{readerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "readers",
+                "{{readerId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"readerId\": \"{{readerId}}\",\n  \"readerName\": \"Innovation Lab Door (East)\",\n  \"locationId\": {{locationId}},\n  \"direction\": \"In\",\n  \"isActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "GET v1/admin/settings (GetSettings)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"GetSettings returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "settings"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PUT v1/admin/settings (UpdateSetting)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"UpdateSetting returns 200\", function () { pm.response.to.have.status(200); });",
+                  "const json = pm.response.json();",
+                  "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-User-Id",
+                "value": "{{userId}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "admin",
+                "settings"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"settingKey\": \"Permission.ExpiryWarningDays\",\n  \"settingValue\": \"7\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
