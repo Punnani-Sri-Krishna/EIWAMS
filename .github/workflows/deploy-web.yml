@@ -100,7 +100,8 @@ jobs:
           API_BASE_URL: ${{ steps.hosts.outputs.api_base_url }}
         run: |
           set -euo pipefail
-          file=EIWAMS.Web/src/environments/environment.ts
+          # The production build replaces environment.ts with environment.prod.ts.
+          file=EIWAMS.Web/src/environments/environment.prod.ts
           grep -q "apiBaseUrl: '/api'" "$file" || { echo "::error::$file no longer contains apiBaseUrl: '/api'; update this step."; exit 1; }
           sed -i "s|apiBaseUrl: '/api'|apiBaseUrl: '${API_BASE_URL}'|" "$file"
           grep -q "apiBaseUrl: '${API_BASE_URL}'" "$file" || { echo "::error::apiBaseUrl replacement failed."; exit 1; }
@@ -117,7 +118,20 @@ jobs:
         working-directory: EIWAMS.Web
         run: |
           npm ci --no-audit --no-fund
-          npm run build
+          npm run build -- --configuration production
+
+      # The SPA calls the Function App cross-origin, so the CSP must allow it.
+      - name: Allow the API host in the Content-Security-Policy
+        env:
+          FUNC_HOST: ${{ steps.hosts.outputs.func_host }}
+        run: |
+          set -euo pipefail
+          file="$DIST/web.config"
+          [ -f "$file" ] || { echo "::error::$file is missing."; exit 1; }
+          grep -q "connect-src 'self'" "$file" || { echo "::error::$file has no \"connect-src 'self'\" to extend."; exit 1; }
+          sed -i "s|connect-src 'self'|connect-src 'self' https://${FUNC_HOST}|" "$file"
+          grep -q "connect-src 'self' https://${FUNC_HOST}" "$file" || { echo "::error::CSP update failed."; exit 1; }
+          grep -o "connect-src[^;]*" "$file"
 
       - name: Verify bundle
         env:
