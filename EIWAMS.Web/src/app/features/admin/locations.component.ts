@@ -20,7 +20,7 @@ import { CODE_PATTERN, LOCATION_TYPES, Location, SaveLocationRequest } from './a
 import { AdminService } from './admin.service';
 import { LocationRow, buildLocationTree, descendantIds, visibleRows } from './location-tree';
 
-const TYPE_RANK: Record<string, number> = { Campus: 0, Building: 1, Floor: 2, Zone: 3 };
+const TYPE_RANK: Record<string, number> = { Campus: 0, Building: 1, Floor: 2, Wing: 3, Zone: 4 };
 
 interface LocationDialogData {
   location: Location | null;
@@ -120,7 +120,7 @@ export class LocationDialogComponent {
 
   private readonly parent = this.data.locations.find((l) => l.locationId === this.data.parentId);
   private readonly defaultType =
-    this.data.location?.locationType ?? (this.parent ? LOCATION_TYPES[Math.min((TYPE_RANK[this.parent.locationType] ?? 0) + 1, 3)] : 'Campus');
+    this.data.location?.locationType ?? (this.parent ? LOCATION_TYPES[Math.min((TYPE_RANK[this.parent.locationType] ?? 0) + 1, LOCATION_TYPES.length - 1)] : 'Campus');
 
   readonly form = this.fb.group(
     {
