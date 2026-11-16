@@ -258,6 +258,12 @@ BEGIN TRY
     DELETE dbo.AccessRequests
     WHERE AccessRequestId IN (SELECT AccessRequestId FROM @DemoAccessRequests);
 
+    -- RFIDCards.CardRequestId points back to CardRequests, so clear the
+    -- captured demo links before deleting their requests.
+    UPDATE dbo.RFIDCards SET CardRequestId = NULL
+    WHERE CardRequestId IN (SELECT CardRequestId FROM @DemoCardRequests)
+       OR CardId IN (SELECT CardId FROM @DemoCards);
+
     DELETE dbo.CardRequestHistory
     WHERE CardRequestId IN (SELECT CardRequestId FROM @DemoCardRequests);
     DELETE dbo.CardRequests
@@ -265,9 +271,6 @@ BEGIN TRY
 
     -- Remove only rows linked to a demo employee; other cards and their
     -- activity remain untouched. Clear circular references first.
-    UPDATE dbo.RFIDCards SET CardRequestId = NULL
-    WHERE CardRequestId IN (SELECT CardRequestId FROM @DemoCardRequests)
-       OR CardId IN (SELECT CardId FROM @DemoCards);
     UPDATE dbo.RFIDCards SET ReplacedByCardId = NULL
     WHERE ReplacedByCardId IN (SELECT CardId FROM @DemoCards)
        OR CardId IN (SELECT CardId FROM @DemoCards);
