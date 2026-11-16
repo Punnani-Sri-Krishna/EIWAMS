@@ -1,5 +1,5 @@
 import { inject } from '@angular/core';
-import { Router, Routes } from '@angular/router';
+import { Routes } from '@angular/router';
 
 import { permissionGuard } from '../../core/auth/permission.guard';
 import { approvalTabs } from '../../core/navigation/nav';
@@ -14,7 +14,7 @@ import { TeamRequestsComponent } from './team-requests.component';
 const firstTab = () => {
   const session = inject(SessionService);
   const tab = approvalTabs({ has: (p) => session.hasPermission(p), roles: session.user()?.roles ?? [] })[0];
-  return inject(Router).createUrlTree([tab ? tab.route : '/unauthorized']);
+  return tab?.route ?? '/unauthorized';
 };
 
 /** Approvals page: one tab per queue (route data feeds component inputs via withComponentInputBinding). */
