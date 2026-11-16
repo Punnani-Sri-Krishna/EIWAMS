@@ -1,21 +1,11 @@
-import { inject } from '@angular/core';
 import { Routes } from '@angular/router';
 
 import { permissionGuard } from '../../core/auth/permission.guard';
-import { approvalTabs } from '../../core/navigation/nav';
-import { SessionService } from '../../core/services/session.service';
 import { CardQueueComponent } from '../card-requests/card-queue.component';
 import { ApprovalQueueComponent } from './approval-queue.component';
 import { ApprovalsHubComponent } from './approvals-hub.component';
 import { ManagerApprovalsComponent } from './manager-approvals.component';
 import { TeamRequestsComponent } from './team-requests.component';
-
-/** `/approvals` opens the first queue the user owns. */
-const firstTab = () => {
-  const session = inject(SessionService);
-  const tab = approvalTabs({ has: (p) => session.hasPermission(p), roles: session.user()?.roles ?? [] })[0];
-  return tab?.route ?? '/unauthorized';
-};
 
 /** Approvals page: one tab per queue (route data feeds component inputs via withComponentInputBinding). */
 const routes: Routes = [
@@ -24,7 +14,6 @@ const routes: Routes = [
     component: ApprovalsHubComponent,
     title: 'Approvals | EIWAMS',
     children: [
-      { path: '', pathMatch: 'full', redirectTo: firstTab },
       {
         path: 'manager',
         component: ManagerApprovalsComponent,

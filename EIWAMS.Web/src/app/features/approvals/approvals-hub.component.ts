@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, OnInit, computed, inject } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
 import { MatTabsModule } from '@angular/material/tabs';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 
 import { approvalTabs } from '../../core/navigation/nav';
 import { SessionService } from '../../core/services/session.service';
@@ -50,6 +50,7 @@ import { WorkCountsService } from '../../core/services/work-counts.service';
 })
 export class ApprovalsHubComponent implements OnInit {
   private readonly session = inject(SessionService);
+  private readonly router = inject(Router);
   private readonly work = inject(WorkCountsService);
   readonly counts = this.work.counts;
   readonly tabs = computed(() => {
@@ -59,5 +60,9 @@ export class ApprovalsHubComponent implements OnInit {
 
   ngOnInit(): void {
     this.work.refresh();
+    if (this.router.url.replace(/[?#].*$/, '') === '/approvals') {
+      const firstTab = this.tabs()[0];
+      void this.router.navigateByUrl(firstTab?.route ?? '/unauthorized');
+    }
   }
 }
