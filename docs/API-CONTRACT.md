@@ -333,7 +333,7 @@ written (null clears), validated per §5.5; no `version` (last write wins).
 `PhotoInfoDto`: `{ hasPhoto: true, contentType, sizeBytes, uploadedAtUtc }`.
 
 `LookupsDto`: `{ departments:[{id,code,name}], locations:[{id,code,name,locationType,parentLocationId,isRestricted}],
-employees:[{id,name,employeeNumber}], users:[{id,name}], readers:[{id,name,locationId}], employeeTypes,
+employees:[{id,name,employeeNumber}], users:[{id,name}], employeeTypes,
 employmentStatuses, cardTypes, cardStatuses, cardRequestTypes, cardRequestTypesOffered, cardRequestStatuses,
 cardRequestStages, cardRequestActions, damagedReasons, bloodGroups, accessTypes, durationCodes, accessRequestStatuses,
 approvalStages, permissionStatuses, eventTypes, violationTypes, violationStatuses, severities, incidentTypes,

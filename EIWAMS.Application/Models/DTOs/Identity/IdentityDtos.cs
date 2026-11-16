@@ -188,15 +188,6 @@ public sealed class NameLookupDto
     public string Name { get; set; } = string.Empty;
 }
 
-public sealed class ReaderLookupDto
-{
-    public string Id { get; set; } = string.Empty;
-
-    public string Name { get; set; } = string.Empty;
-
-    public int LocationId { get; set; }
-}
-
 public sealed class LookupsDto
 {
     public IReadOnlyList<CodeLookupDto> Departments { get; set; } = [];
@@ -206,8 +197,6 @@ public sealed class LookupsDto
     public IReadOnlyList<EmployeeLookupDto> Employees { get; set; } = [];
 
     public IReadOnlyList<NameLookupDto> Users { get; set; } = [];
-
-    public IReadOnlyList<ReaderLookupDto> Readers { get; set; } = [];
 
     public IReadOnlyList<string> EmployeeTypes { get; set; } = [];
 

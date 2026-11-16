@@ -57,7 +57,6 @@ public sealed class IdentityRepository(IDbConnectionFactory factory) : Repositor
             Locations = (await grid.ReadAsync<LocationLookupDto>()).AsList(),
             Employees = (await grid.ReadAsync<EmployeeLookupDto>()).AsList(),
             Users = (await grid.ReadAsync<NameLookupDto>()).AsList(),
-            Readers = (await grid.ReadAsync<ReaderLookupDto>()).AsList(),
             EmployeeTypes = LookupValues.EmployeeTypes,
             EmploymentStatuses = LookupValues.EmploymentStatuses,
             CardTypes = LookupValues.CardTypes,

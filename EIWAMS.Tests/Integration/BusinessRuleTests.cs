@@ -397,6 +397,16 @@ public class BusinessRuleTests
     }
 
     [SkippableFact]
+    public async Task LookupsReadExactlyTheResultSetsReturnedByTheLookupProcedure()
+    {
+        TestFixture fixture = await EnsureFixtureAsync();
+        LookupsDto lookups = await new IdentityRepository(_factory).GetLookupsAsync(Actor(fixture.AdminUserId));
+
+        Assert.Contains(lookups.Departments, item => item.Id == fixture.Department.DepartmentId);
+        Assert.Contains(lookups.Locations, item => item.Id == fixture.Building.LocationId);
+    }
+
+    [SkippableFact]
     public async Task EmployeeSyncUpsertsBatchAndResolvesManagerFromSameBatch()
     {
         TestFixture fixture = await EnsureFixtureAsync();
