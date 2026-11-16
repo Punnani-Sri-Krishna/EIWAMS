@@ -52,7 +52,13 @@ const routes: Routes = [
       emptyText: 'No lost-card requests are waiting for security review.',
     },
   },
-  { path: 'access', component: ApprovalQueueComponent, title: 'Access requests review | EIWAMS', ...guard('Approvals.Decide') },
+  {
+    path: 'access',
+    component: ApprovalQueueComponent,
+    title: 'Access requests review | EIWAMS',
+    ...guard('Approvals.Decide'),
+    data: { permissions: ['Approvals.Decide'], title: 'Access requests review' },
+  },
 ];
 
 export default routes;
