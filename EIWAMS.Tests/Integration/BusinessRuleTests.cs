@@ -554,12 +554,12 @@ public class BusinessRuleTests
     }
 
     [SkippableFact]
-    public async Task OpenBuildingRequestBlocksRequestsForLocationsInsideIt()
+    public async Task BuildingRequestDoesNotBlockInnerLocationButBlocksSameBuilding()
     {
         TestFixture fixture = await EnsureFixtureAsync();
         TestActor requester = await CreateRequesterAsync(fixture);
         var access = new AccessRepository(_factory);
-        await access.CreateRequestAsync(Actor(requester.UserId), new CreateAccessRequestRequest
+        var building = new CreateAccessRequestRequest
         {
             EmployeeId = requester.EmployeeId,
             AccessType = "Building",
@@ -567,9 +567,11 @@ public class BusinessRuleTests
             LocationId = fixture.Building.LocationId,
             DurationCode = "OneMonth",
             Justification = "Integration test: building access",
-        });
+        };
+        await access.CreateRequestAsync(Actor(requester.UserId), building);
 
-        Assert.Equal(ErrorType.Conflict, await ErrorOf(() => CreateAccessRequestAsync(fixture, requester)));
+        Assert.Equal("PendingApproval", (await CreateAccessRequestAsync(fixture, requester)).Status);
+        Assert.Equal(ErrorType.Conflict, await ErrorOf(() => access.CreateRequestAsync(Actor(requester.UserId), building)));
     }
 
     [SkippableFact]

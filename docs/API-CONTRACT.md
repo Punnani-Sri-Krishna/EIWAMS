@@ -228,9 +228,10 @@ New columns on `AccessRequests` (guarded): `AccessType NVARCHAR(20) NOT NULL DEF
 Target rules: `Building` -> `locationId = buildingLocationId` and that location's type is `Building`. `WingFloor` ->
 `locationId` is a strict descendant of `buildingLocationId` with type `Floor`, `Wing` or `Zone`. Violations -> 400.
 
-Duplicate rules (create and update) -> 409: the employee already has an open request (`Draft`, `Submitted`,
-`PendingApproval`, `Returned`, `Approved`) for the target or any ancestor location, or an `Active` permission on the
-target or any ancestor that expires more than 7 days from now (renewal is allowed in the final 7 days).
+Duplicate rules (create and update) -> 409, matched on the exact `locationId` only (building access does not cover
+the wings/floors/zones inside it): the employee already has an open request (`Draft`, `Submitted`, `PendingApproval`,
+`Returned`, `Approved`) for that location, or an `Active` permission on it that expires more than 7 days from now
+(renewal is allowed in the final 7 days).
 
 Duration: `validFromUtc` defaults to now (must not be earlier than now - 5 minutes, else 400). `validToUtc` is computed
 server-side: OneWeek +7 days, OneMonth +1 month, ThreeMonths +3 months, SixMonths +6 months, OneYear +1 year,
