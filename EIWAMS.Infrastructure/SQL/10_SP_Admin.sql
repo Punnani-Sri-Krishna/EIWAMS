@@ -482,7 +482,7 @@ BEGIN
         SET @LocationName = NULLIF(LTRIM(RTRIM(@LocationName)), N'');
         SET @TimeZone = ISNULL(NULLIF(LTRIM(RTRIM(@TimeZone)), N''), N'India Standard Time');
         IF @LocationCode IS NULL OR @LocationName IS NULL THROW 50400, N'Location code and name are required.', 1;
-        IF @LocationType NOT IN (N'Campus', N'Building', N'Floor', N'Zone') THROW 50400, N'locationType must be Campus, Building, Floor or Zone.', 1;
+        IF @LocationType NOT IN (N'Campus', N'Building', N'Floor', N'Wing', N'Zone') THROW 50400, N'locationType must be Campus, Building, Floor, Wing or Zone.', 1;
         IF @LocationType = N'Campus' AND @ParentLocationId IS NOT NULL THROW 50400, N'A campus cannot have a parent location.', 1;
         IF @LocationType <> N'Campus' AND @ParentLocationId IS NULL THROW 50400, N'A parent location is required.', 1;
         IF @LocationId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @LocationId) THROW 50404, N'Location not found.', 1;

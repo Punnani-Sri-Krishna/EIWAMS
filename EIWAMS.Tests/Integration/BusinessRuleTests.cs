@@ -407,6 +407,24 @@ public class BusinessRuleTests
     }
 
     [SkippableFact]
+    public async Task AdminCanSaveWingLocationUnderFloor()
+    {
+        TestFixture fixture = await EnsureFixtureAsync();
+        LocationDto wing = await new AdminRepository(_factory).SaveLocationAsync(Actor(fixture.AdminUserId), null, new SaveLocationRequest
+        {
+            ParentLocationId = fixture.PublicFloor.LocationId,
+            LocationCode = Unique("TSTW"),
+            LocationName = "Integration Test Wing",
+            LocationType = "Wing",
+            IsActive = true,
+            TimeZone = "UTC",
+        });
+
+        Assert.Equal("Wing", wing.LocationType);
+        Assert.Equal(fixture.PublicFloor.LocationId, wing.ParentLocationId);
+    }
+
+    [SkippableFact]
     public async Task EmployeeSyncUpsertsBatchAndResolvesManagerFromSameBatch()
     {
         TestFixture fixture = await EnsureFixtureAsync();
