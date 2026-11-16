@@ -161,8 +161,96 @@ BEGIN
 END
 GO
 
+-- Every user is an employee (wave 3). Links an Active unlinked employee with the user's email, otherwise creates one
+-- from the user's display name/email (EmployeeNumber EMPnnnn continuing the highest existing number; department,
+-- manager, location and designation empty). Grants the automatic roles and audits. Runs inside the caller's transaction.
+CREATE OR ALTER PROCEDURE dbo.usp_Internal_EnsureEmployeeForUser
+    @UserId        INT,
+    @ActorUserId   INT = NULL,
+    @CorrelationId UNIQUEIDENTIFIER = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF @UserId IS NULL RETURN;
+    IF EXISTS (SELECT 1 FROM dbo.Employees WHERE UserId = @UserId)
+    BEGIN
+        EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
+        RETURN;
+    END
+
+    DECLARE @Email NVARCHAR(256), @DisplayName NVARCHAR(150);
+    SELECT @Email = Email, @DisplayName = NULLIF(LTRIM(RTRIM(DisplayName)), N'') FROM dbo.Users WHERE UserId = @UserId;
+    IF @Email IS NULL RETURN;
+
+    DECLARE @EmployeeId INT, @Summary NVARCHAR(500);
+    SELECT TOP (1) @EmployeeId = e.EmployeeId FROM dbo.Employees e WITH (UPDLOCK)
+    WHERE e.WorkEmail = @Email AND e.EmploymentStatus = N'Active' AND e.UserId IS NULL
+    ORDER BY e.EmployeeId;
+
+    IF @EmployeeId IS NOT NULL
+    BEGIN
+        UPDATE dbo.Employees SET UserId = @UserId, UpdatedAtUtc = SYSUTCDATETIME(), UpdatedByUserId = @ActorUserId WHERE EmployeeId = @EmployeeId;
+        SET @Summary = CONCAT(N'User ', @UserId, N' linked to employee ', @EmployeeId, N' by work email.');
+        EXEC dbo.usp_Audit_Write @ActorUserId, N'Employee.Linked', N'Employee', @EmployeeId, @Summary, NULL, NULL, NULL, @CorrelationId;
+    END
+    ELSE
+    BEGIN
+        DECLARE @Name NVARCHAR(150) = @DisplayName;
+        IF @Name IS NULL OR @Name LIKE N'%@%'
+            SET @Name = LTRIM(RTRIM(REPLACE(REPLACE(REPLACE(LEFT(@Email, CHARINDEX(N'@', @Email + N'@') - 1), N'.', N' '), N'_', N' '), N'-', N' ')));
+        IF @Name IS NULL OR @Name = N'' SET @Name = N'Employee';
+        DECLARE @Space INT = CHARINDEX(N' ', @Name);
+        DECLARE @First NVARCHAR(100) = LEFT(CASE WHEN @Space > 0 THEN LEFT(@Name, @Space - 1) ELSE @Name END, 100);
+        DECLARE @Last NVARCHAR(100) = LEFT(CASE WHEN @Space > 0 THEN LTRIM(SUBSTRING(@Name, @Space + 1, 150)) ELSE N'' END, 100);
+
+        DECLARE @Next INT = ISNULL((SELECT MAX(TRY_CAST(SUBSTRING(EmployeeNumber, 4, 27) AS INT))
+                                    FROM dbo.Employees WITH (UPDLOCK, HOLDLOCK)
+                                    WHERE EmployeeNumber LIKE N'EMP[0-9]%'), 0) + 1;
+        DECLARE @Number NVARCHAR(30) = CONCAT(N'EMP', REPLICATE(N'0', 4 - LEN(@Next)), @Next);
+        WHILE EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeNumber = @Number)
+        BEGIN
+            SET @Next += 1;
+            SET @Number = CONCAT(N'EMP', REPLICATE(N'0', 4 - LEN(@Next)), @Next);
+        END
+
+        INSERT dbo.Employees (EmployeeNumber, FirstName, LastName, WorkEmail, EmployeeType, DepartmentId, ManagerEmployeeId, LocationId,
+                              EmploymentStatus, JoinDate, UserId, CreatedByUserId, Designation)
+        VALUES (@Number, @First, @Last, @Email, N'Permanent', NULL, NULL, NULL, N'Active', CAST(SYSUTCDATETIME() AS DATE), @UserId, @ActorUserId, NULL);
+        SET @EmployeeId = SCOPE_IDENTITY();
+        SET @Summary = CONCAT(N'Employee ', @Number, N' auto-created for user ', @UserId, N' (', @Email, N').');
+        DECLARE @After NVARCHAR(MAX) = (SELECT @Number AS employeeNumber, @First AS firstName, @Last AS lastName, @Email AS workEmail, @UserId AS userId
+                                        FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+        EXEC dbo.usp_Audit_Write @ActorUserId, N'Employee.AutoProvisioned', N'Employee', @EmployeeId, @Summary, NULL, @After, NULL, @CorrelationId;
+    END
+
+    EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
+END
+GO
+
+-- Idempotent backfill: every user without a linked employee gets one (and the Employee role).
+CREATE OR ALTER PROCEDURE dbo.usp_Internal_BackfillUserEmployees
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @Uid INT;
+    DECLARE bf CURSOR LOCAL FAST_FORWARD FOR
+        SELECT u.UserId FROM dbo.Users u WHERE NOT EXISTS (SELECT 1 FROM dbo.Employees e WHERE e.UserId = u.UserId) ORDER BY u.UserId;
+    OPEN bf; FETCH NEXT FROM bf INTO @Uid;
+    WHILE @@FETCH_STATUS = 0
+    BEGIN
+        BEGIN TRAN;
+        EXEC dbo.usp_Internal_EnsureEmployeeForUser @Uid, NULL;
+        COMMIT;
+        FETCH NEXT FROM bf INTO @Uid;
+    END
+    CLOSE bf; DEALLOCATE bf;
+    EXEC dbo.usp_Internal_GrantAutoRoles NULL;
+END
+GO
+
 -- Resolves an Entra principal to an EIWAMS user: by object id, else by email (first sign-in links the object id),
--- else JIT-provisions a user for an Active employee whose WorkEmail matches.
+-- else JIT-provisions a user (and its employee record).
 CREATE OR ALTER PROCEDURE dbo.usp_User_ResolveEntra
     @TenantId    UNIQUEIDENTIFIER,
     @ObjectId    UNIQUEIDENTIFIER,
@@ -184,33 +272,40 @@ BEGIN
         END
     END
 
-    -- JIT provisioning (contract §5.5).
+    -- JIT provisioning (contract §5.5): link an Active unlinked employee with the same WorkEmail, otherwise auto-create
+    -- the employee from the Entra claims (simulated HRMS/Entra sync). Every signed-in user is an employee.
     IF @UserId IS NULL AND @CleanEmail IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @CleanEmail)
+       AND NOT EXISTS (SELECT 1 FROM dbo.Employees e WHERE e.WorkEmail = @CleanEmail AND e.EmploymentStatus = N'Active' AND e.UserId IS NOT NULL)
     BEGIN
-        DECLARE @EmployeeId INT, @Name NVARCHAR(150);
-        SELECT TOP (1) @EmployeeId = e.EmployeeId, @Name = CONCAT(e.FirstName, N' ', e.LastName)
-        FROM dbo.Employees e
-        WHERE e.WorkEmail = @CleanEmail AND e.EmploymentStatus = N'Active' AND e.UserId IS NULL
-        ORDER BY e.EmployeeId;
-
-        IF @EmployeeId IS NOT NULL
-        BEGIN
-            BEGIN TRY
-                BEGIN TRAN;
-                INSERT dbo.Users (DisplayName, Email, EntraTenantId, EntraObjectId, IsActive, AllFacilities)
-                VALUES (LEFT(ISNULL(NULLIF(LTRIM(RTRIM(@DisplayName)), N''), @Name), 150), @CleanEmail, @TenantId, @ObjectId, 1, 0);
-                SET @UserId = SCOPE_IDENTITY();
-                UPDATE dbo.Employees SET UserId = @UserId, UpdatedAtUtc = SYSUTCDATETIME() WHERE EmployeeId = @EmployeeId;
-                EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
-                DECLARE @Summary NVARCHAR(500) = CONCAT(N'User JIT-provisioned from Entra sign-in for employee ', @EmployeeId, N'.');
-                EXEC dbo.usp_Audit_Write @UserId, N'User.JitProvision', N'User', @UserId, @Summary;
-                COMMIT;
-            END TRY
-            BEGIN CATCH
-                IF @@TRANCOUNT > 0 ROLLBACK;
-                THROW;
-            END CATCH
-        END
+        DECLARE @Name NVARCHAR(150) = (SELECT TOP (1) CONCAT(e.FirstName, N' ', e.LastName) FROM dbo.Employees e
+                                       WHERE e.WorkEmail = @CleanEmail AND e.EmploymentStatus = N'Active' AND e.UserId IS NULL
+                                       ORDER BY e.EmployeeId);
+        BEGIN TRY
+            BEGIN TRAN;
+            INSERT dbo.Users (DisplayName, Email, EntraTenantId, EntraObjectId, IsActive, AllFacilities)
+            VALUES (LEFT(COALESCE(NULLIF(LTRIM(RTRIM(@DisplayName)), N''), NULLIF(LTRIM(RTRIM(@Name)), N''), @CleanEmail), 150),
+                    @CleanEmail, @TenantId, @ObjectId, 1, 0);
+            SET @UserId = SCOPE_IDENTITY();
+            EXEC dbo.usp_Audit_Write @UserId, N'User.JitProvision', N'User', @UserId, N'User JIT-provisioned from Entra sign-in.';
+            EXEC dbo.usp_Internal_EnsureEmployeeForUser @UserId, @UserId;
+            COMMIT;
+        END TRY
+        BEGIN CATCH
+            IF @@TRANCOUNT > 0 ROLLBACK;
+            THROW;
+        END CATCH
+    END
+    ELSE IF @UserId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE UserId = @UserId)
+    BEGIN
+        BEGIN TRY
+            BEGIN TRAN;
+            EXEC dbo.usp_Internal_EnsureEmployeeForUser @UserId, @UserId;
+            COMMIT;
+        END TRY
+        BEGIN CATCH
+            IF @@TRANCOUNT > 0 ROLLBACK;
+            THROW;
+        END CATCH
     END
     ELSE IF @UserId IS NOT NULL
         EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
@@ -266,8 +361,6 @@ BEGIN
     ORDER BY e.FirstName, e.LastName;
 
     SELECT UserId AS Id, DisplayName AS Name FROM dbo.Users WHERE IsActive = 1 ORDER BY DisplayName;
-
-    SELECT ReaderId AS Id, ReaderName AS Name, LocationId FROM dbo.Readers WHERE IsActive = 1 ORDER BY ReaderName;
 END
 GO
 

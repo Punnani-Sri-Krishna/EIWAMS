@@ -11,7 +11,8 @@
       baseline  Records scripts as applied WITHOUT running them (database already deployed by hand).
 
     Script set: 01..11 always; 13_Grant_Admin_Users.sql with -IncludeAdminProvisioning;
-    12_DemoData.sql with -IncludeDemoData (development only).
+    12_PurgeDemoData.sql with -PurgeDemoData (development only; refused for databases named like '%prod%'). The purge
+    runs every time it is requested (status Always) and deletes the former demo records and all transactional data.
 
     Requires sqlcmd (go-sqlcmd recommended; the ODBC sqlcmd works for SQL / Windows authentication).
 
@@ -21,7 +22,7 @@
 
 .EXAMPLE
     # Local SQL Server with Windows authentication
-    ./deploy/sql/Invoke-DbMigrations.ps1 -Server . -Database EIWAMS -Action apply -Authentication Integrated -TrustServerCertificate -IncludeAdminProvisioning -IncludeDemoData
+    ./deploy/sql/Invoke-DbMigrations.ps1 -Server . -Database EIWAMS -Action apply -Authentication Integrated -TrustServerCertificate -IncludeAdminProvisioning
 #>
 [CmdletBinding()]
 param(
@@ -31,7 +32,7 @@ param(
     # ActiveDirectoryDefault: Azure CLI / environment token (go-sqlcmd). SqlPassword: SQLCMDUSER + SQLCMDPASSWORD env vars. Integrated: Windows auth.
     [ValidateSet('ActiveDirectoryDefault', 'SqlPassword', 'Integrated')] [string] $Authentication = 'ActiveDirectoryDefault',
     [switch] $IncludeAdminProvisioning,
-    [switch] $IncludeDemoData,
+    [switch] $PurgeDemoData,
     # Defaults to <repo>\EIWAMS.Infrastructure\SQL (resolved below; $PSScriptRoot is empty in param defaults on Windows PowerShell 5.1).
     [string] $ScriptsPath,
     [string] $RunId = $(if ($env:GITHUB_RUN_ID) { "$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)" } else { "local-$([DateTime]::UtcNow.ToString('yyyyMMddHHmmss'))" }),
@@ -49,7 +50,7 @@ if (-not (Get-Command $Sqlcmd -ErrorAction SilentlyContinue)) { throw "sqlcmd wa
 if ($Authentication -eq 'SqlPassword' -and (-not $env:SQLCMDUSER -or -not $env:SQLCMDPASSWORD)) {
     throw 'SqlPassword authentication needs the SQLCMDUSER and SQLCMDPASSWORD environment variables.'
 }
-if ($IncludeDemoData -and $Database -match '(?i)prod') { throw 'Demo data must never be loaded into a production database.' }
+if ($PurgeDemoData -and $Database -match '(?i)prod') { throw 'The demo data purge must never be run against a production database.' }
 
 if (-not $ScriptsPath) { $ScriptsPath = Join-Path (Join-Path (Split-Path (Split-Path $PSScriptRoot -Parent) -Parent) 'EIWAMS.Infrastructure') 'SQL' }
 $ScriptsPath = (Resolve-Path $ScriptsPath).Path
@@ -58,7 +59,7 @@ $selected = Get-ChildItem -Path $ScriptsPath -Filter '*.sql' -File |
     Where-Object {
         switch -Regex ($_.Name) {
             '^13_' { [bool]$IncludeAdminProvisioning; break }
-            '^12_' { [bool]$IncludeDemoData; break }
+            '^12_' { [bool]$PurgeDemoData; break }
             default { $true }
         }
     } |
@@ -124,7 +125,7 @@ foreach ($line in $state) {
 
 $plan = foreach ($script in $selected) {
     $sum = Get-ScriptChecksum $script.FullName
-    $status = if (-not $applied.ContainsKey($script.Name)) { 'Pending' } elseif ($applied[$script.Name] -ne $sum) { 'Changed' } else { 'Applied' }
+    $status = if ($script.Name -like '12_*') { 'Always' } elseif (-not $applied.ContainsKey($script.Name)) { 'Pending' } elseif ($applied[$script.Name] -ne $sum) { 'Changed' } else { 'Applied' }
     [pscustomobject]@{ Script = $script.Name; Status = $status; Checksum = $sum; Path = $script.FullName }
 }
 
@@ -133,7 +134,7 @@ $summary = "### Database migrations ($Action)`n`nServer ``$Server`` / database `
 $summary += ($plan | ForEach-Object { "| $($_.Script) | $($_.Status) |" }) -join "`n"
 Write-Summary ($summary + "`n")
 
-$work = @($plan | Where-Object Status -ne 'Applied')
+$work = @($plan | Where-Object { $_.Status -ne 'Applied' -and -not ($Action -eq 'baseline' -and $_.Status -eq 'Always') })
 if ($Action -eq 'plan') {
     Write-Host "$($work.Count) script(s) would run. Plan only: nothing was changed."
     return
@@ -154,7 +155,7 @@ foreach ($item in $work) {
     if ($Action -eq 'apply') {
         Write-Host "==> Applying $($item.Script) ($($item.Status))"
         $out = Invoke-Sqlcmd2 -File $item.Path
-        $out | Where-Object { $_ -match '^(Msg |Demo data|Warning|Created )' } | ForEach-Object { Write-Host "    $_" }
+        $out | Where-Object { $_ -match '^(Msg |Warning|Created )' } | ForEach-Object { Write-Host "    $_" }
     }
     else {
         Write-Host "==> Baselining $($item.Script) (not executed)"

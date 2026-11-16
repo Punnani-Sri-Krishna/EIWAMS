@@ -247,10 +247,6 @@ export class LocationDialogComponent {
                 <th mat-header-cell *matHeaderCellDef>Type</th>
                 <td mat-cell *matCellDef="let r">{{ r.locationType }}</td>
               </ng-container>
-              <ng-container matColumnDef="readers">
-                <th mat-header-cell *matHeaderCellDef class="num">Readers</th>
-                <td mat-cell *matCellDef="let r" class="num">{{ r.readerCount }}</td>
-              </ng-container>
               <ng-container matColumnDef="status">
                 <th mat-header-cell *matHeaderCellDef>Status</th>
                 <td mat-cell *matCellDef="let r">
@@ -293,7 +289,7 @@ export class LocationsComponent implements OnInit {
   private readonly destroyRef = inject(DestroyRef);
 
   readonly canManage = inject(SessionService).hasPermission('Reference.Manage');
-  readonly columns = ['name', 'code', 'type', 'readers', 'status', 'actions'];
+  readonly columns = ['name', 'code', 'type', 'status', 'actions'];
   readonly loading = signal(true);
   readonly error = signal<ApiError | null>(null);
   readonly locations = signal<Location[]>([]);
@@ -369,8 +365,7 @@ export class LocationsComponent implements OnInit {
           title: 'Deactivate location',
           message:
             `Deactivate ${location.locationName}?` +
-            (activeChildren ? ` It still has ${activeChildren} active child location(s).` : '') +
-            (location.readerCount ? ` ${location.readerCount} reader(s) are assigned here.` : ''),
+            (activeChildren ? ` It still has ${activeChildren} active child location(s).` : ''),
           confirmText: 'Deactivate',
         },
       })

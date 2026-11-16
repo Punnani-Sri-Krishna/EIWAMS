@@ -1,17 +1,16 @@
 import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 
-import { CurrentUser, MenuItem } from '../models/api.models';
+import { CurrentUser } from '../models/api.models';
 import { toDataUrl } from '../../shared/utils/image-resize';
 import { ApiService } from './api.service';
 
-/** Holds the signed-in user's profile, permissions and menu (database driven). */
+/** Holds the signed-in user's profile and permissions (the top navigation is derived from them). */
 @Injectable({ providedIn: 'root' })
 export class SessionService {
   private readonly api = inject(ApiService);
 
   readonly user = signal<CurrentUser | null>(null);
-  readonly menu = signal<MenuItem[]>([]);
   /** `data:` URL of the user's photo for the app bar avatar (null = show initials). */
   readonly photoUrl = signal<string | null>(null);
   readonly isSignedIn = computed(() => this.user() !== null);
@@ -38,10 +37,6 @@ export class SessionService {
     );
   }
 
-  loadMenu(): Observable<MenuItem[]> {
-    return this.api.get<MenuItem[]>('v1/me/menu').pipe(tap((m) => this.menu.set(m ?? [])));
-  }
-
   /** Loads the avatar photo (v1/me/photo) when the user has one; failures fall back to initials. */
   refreshPhoto(): void {
     if (!this.user()?.hasPhoto) {
@@ -63,7 +58,6 @@ export class SessionService {
 
   clear(): void {
     this.user.set(null);
-    this.menu.set([]);
     this.photoUrl.set(null);
   }
 }

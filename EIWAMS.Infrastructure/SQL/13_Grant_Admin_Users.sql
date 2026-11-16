@@ -64,6 +64,9 @@ WHERE (u.Email = N'admin@eiwams.local' OR u.Email IN (SELECT Email FROM @Admins)
 
 COMMIT;
 
+-- Every user is an employee (wave 3): create/link employee records for new administrators.
+EXEC dbo.usp_Internal_BackfillUserEmployees;
+
 SELECT u.UserId, u.DisplayName, u.Email, u.IsActive, u.AllFacilities,
        Roles = (SELECT STRING_AGG(r.RoleName, N', ') FROM dbo.UserRoles ur JOIN dbo.Roles r ON r.RoleId = ur.RoleId WHERE ur.UserId = u.UserId)
 FROM dbo.Users u

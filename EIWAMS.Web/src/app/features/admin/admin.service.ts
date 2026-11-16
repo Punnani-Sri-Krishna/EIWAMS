@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { Observable } from 'rxjs';
+import { Observable, map } from 'rxjs';
 
 import { Lookups, PagedResult } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
@@ -7,16 +7,50 @@ import {
   AdminUser,
   AdminUserQuery,
   Department,
+  EmployeeRoleRow,
   Location,
-  Reader,
-  Role,
-  RolePermission,
-  SaveAdminUserRequest,
   SaveDepartmentRequest,
   SaveLocationRequest,
-  SaveReaderRequest,
-  Setting,
+  UpdateEmployeeRolesRequest,
+  normaliseRoles,
 } from './admin.models';
+
+/** Employee fields used to prefill the edit dialog when the list row does not carry them. */
+export interface EmployeeOrgDetails {
+  departmentId: number | null;
+  managerEmployeeId: number | null;
+  designation: string | null;
+  locationId: number | null;
+}
+
+/**
+ * Maps a raw list/save row to the "Employees & roles" row. Returns null for accounts with no employee record
+ * (nothing to save by employee). Keep all payload knowledge in this file.
+ */
+export function toEmployeeRoleRow(u: AdminUser): EmployeeRoleRow | null {
+  if (u.employeeId == null) {
+    return null;
+  }
+  return {
+    employeeId: u.employeeId,
+    userId: u.userId ?? null,
+    displayName: u.displayName || u.fullName || u.employeeNumber || `Employee #${u.employeeId}`,
+    email: u.email || u.workEmail || '',
+    employeeNumber: u.employeeNumber ?? null,
+    departmentId: u.departmentId ?? null,
+    departmentName: u.departmentName ?? null,
+    managerEmployeeId: u.managerEmployeeId ?? null,
+    managerName: u.managerName ?? null,
+    designation: u.designation ?? null,
+    locationId: u.locationId ?? null,
+    locationName: u.locationName ?? null,
+    roles: normaliseRoles(u.roles ?? u.roleNames ?? []),
+    isActive: u.isActive,
+    lastLoginAtUtc: u.lastLoginAtUtc ?? null,
+  };
+}
+
+const isRow = (r: EmployeeRoleRow | null): r is EmployeeRoleRow => r !== null;
 
 @Injectable({ providedIn: 'root' })
 export class AdminService {
@@ -26,28 +60,40 @@ export class AdminService {
     return this.api.get<Lookups>('v1/lookups');
   }
 
-  users(query: AdminUserQuery): Observable<PagedResult<AdminUser>> {
-    return this.api.getPaged<AdminUser>('v1/admin/users', { ...query });
+  /**
+   * Employees with their roles (server-paged), including employees that have no sign-in account yet
+   * (`userId: null`). Account-only rows without an employee record are dropped.
+   */
+  employeeRoles(query: AdminUserQuery): Observable<PagedResult<EmployeeRoleRow>> {
+    return this.api
+      .getPaged<AdminUser>('v1/admin/users', { ...query })
+      .pipe(map((res) => ({ ...res, items: (res?.items ?? []).map(toEmployeeRoleRow).filter(isRow) })));
   }
 
-  createUser(body: SaveAdminUserRequest): Observable<AdminUser> {
-    return this.api.post<AdminUser>('v1/admin/users', body);
+  /** Organisation fields of a linked employee (`GET v1/employees/{id}`), used when the list row lacks them. */
+  employeeOrg(employeeId: number): Observable<EmployeeOrgDetails> {
+    return this.api.get<Partial<EmployeeOrgDetails>>(`v1/employees/${employeeId}`).pipe(
+      map((e) => ({
+        departmentId: e?.departmentId ?? null,
+        managerEmployeeId: e?.managerEmployeeId ?? null,
+        designation: e?.designation ?? null,
+        locationId: e?.locationId ?? null,
+      })),
+    );
   }
 
-  updateUser(id: number, body: SaveAdminUserRequest): Observable<AdminUser> {
-    return this.api.put<AdminUser>(`v1/admin/users/${id}`, body);
-  }
-
-  roles(): Observable<Role[]> {
-    return this.api.get<Role[]>('v1/admin/roles');
-  }
-
-  rolePermissions(roleId: number): Observable<RolePermission[]> {
-    return this.api.get<RolePermission[]>(`v1/admin/roles/${roleId}/permissions`);
-  }
-
-  setRolePermissions(roleId: number, permissionIds: number[]): Observable<RolePermission[]> {
-    return this.api.put<RolePermission[]>(`v1/admin/roles/${roleId}/permissions`, { permissionIds });
+  /**
+   * Assigns roles and organisation fields by employee (`PUT v1/admin/employees/{employeeId}`). The API links the
+   * employee's account or creates one when absent, so no userId is sent. Resolves to the saved row when returned.
+   */
+  updateEmployeeRoles(employeeId: number, body: UpdateEmployeeRolesRequest): Observable<EmployeeRoleRow | null> {
+    return this.api
+      .put<AdminUser | null>(`v1/admin/employees/${employeeId}`, { ...body, roles: normaliseRoles(body.roles) })
+      .pipe(
+        map((u) =>
+          u && typeof u === 'object' ? toEmployeeRoleRow({ ...u, employeeId: u.employeeId ?? employeeId }) : null,
+        ),
+      );
   }
 
   departments(): Observable<Department[]> {
@@ -68,25 +114,5 @@ export class AdminService {
     return id == null
       ? this.api.post<Location>('v1/locations', body)
       : this.api.put<Location>(`v1/locations/${id}`, body);
-  }
-
-  readers(): Observable<Reader[]> {
-    return this.api.get<Reader[]>('v1/readers');
-  }
-
-  createReader(body: SaveReaderRequest): Observable<Reader> {
-    return this.api.post<Reader>('v1/readers', body);
-  }
-
-  updateReader(readerId: string, body: SaveReaderRequest): Observable<Reader> {
-    return this.api.put<Reader>(`v1/readers/${encodeURIComponent(readerId)}`, body);
-  }
-
-  settings(): Observable<Setting[]> {
-    return this.api.get<Setting[]>('v1/admin/settings');
-  }
-
-  updateSetting(settingKey: string, settingValue: string): Observable<Setting> {
-    return this.api.put<Setting>('v1/admin/settings', { settingKey, settingValue });
   }
 }

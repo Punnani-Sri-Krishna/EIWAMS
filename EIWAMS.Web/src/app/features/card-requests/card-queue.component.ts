@@ -11,6 +11,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 
+import { WorkCountsService } from '../../core/services/work-counts.service';
 import { Notifier, PagedList } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS } from '../approvals/kit/ui.components';
 import { CARD_ACTION_META, CardRequest, CardRequestAction, CardRequestStage, cardReasonText } from './card-requests.models';
@@ -149,6 +150,7 @@ export function queueRowActions(status: string): { quick: CardRequestAction[]; o
 export class CardQueueComponent implements OnInit {
   private readonly service = inject(CardRequestsService);
   private readonly notifier = inject(Notifier);
+  private readonly work = inject(WorkCountsService);
 
   readonly stage = input<CardRequestStage>('Manager');
   readonly title = input('Card requests');
@@ -174,6 +176,7 @@ export class CardQueueComponent implements OnInit {
     this.service.decideWithPrompt(r, action).subscribe({
       next: () => {
         this.notifier.success(`${r.requestNumber} ${CARD_ACTION_META[action].done}.`);
+        this.work.refresh();
         this.list.load();
       },
       error: (err: unknown) => {

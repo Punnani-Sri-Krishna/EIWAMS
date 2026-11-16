@@ -1,50 +1,34 @@
 import { Routes } from '@angular/router';
 
 import { permissionGuard } from '../../core/auth/permission.guard';
+import { DepartmentsComponent } from './departments.component';
+import { EmployeesRolesComponent } from './employees-roles.component';
+import { LocationsComponent } from './locations.component';
 
+/** Admin: Employees & roles, Locations, Departments (SIMPLIFY-SPEC §B). */
 const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'users' },
+  { path: '', pathMatch: 'full', redirectTo: 'employees' },
   {
-    path: 'users',
-    title: 'Users',
+    path: 'employees',
+    component: EmployeesRolesComponent,
+    title: 'Employees & roles | EIWAMS',
     canActivate: [permissionGuard],
     data: { permissions: ['Users.Manage'] },
-    loadComponent: () => import('./users.component').then((m) => m.UsersComponent),
   },
-  {
-    path: 'roles',
-    title: 'Roles & permissions',
-    canActivate: [permissionGuard],
-    data: { permissions: ['Roles.Manage'] },
-    loadComponent: () => import('./roles.component').then((m) => m.RolesComponent),
-  },
+  { path: 'users', redirectTo: 'employees' },
   {
     path: 'departments',
-    title: 'Departments',
+    component: DepartmentsComponent,
+    title: 'Departments | EIWAMS',
     canActivate: [permissionGuard],
     data: { permissions: ['Reference.Manage'] },
-    loadComponent: () => import('./departments.component').then((m) => m.DepartmentsComponent),
   },
   {
     path: 'locations',
-    title: 'Locations',
+    component: LocationsComponent,
+    title: 'Locations | EIWAMS',
     canActivate: [permissionGuard],
     data: { permissions: ['Reference.Manage'] },
-    loadComponent: () => import('./locations.component').then((m) => m.LocationsComponent),
-  },
-  {
-    path: 'readers',
-    title: 'RFID readers',
-    canActivate: [permissionGuard],
-    data: { permissions: ['Reference.Manage'] },
-    loadComponent: () => import('./readers.component').then((m) => m.ReadersComponent),
-  },
-  {
-    path: 'settings',
-    title: 'System settings',
-    canActivate: [permissionGuard],
-    data: { permissions: ['Settings.Manage'] },
-    loadComponent: () => import('./settings.component').then((m) => m.SettingsComponent),
   },
 ];
 

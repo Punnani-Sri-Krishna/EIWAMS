@@ -58,67 +58,27 @@ public sealed class PermissionAuthorizationMiddleware(RateLimiter rateLimiter) :
         ["ProvisionPermission"] = [P.PermissionsProvision],
         ["RevokePermission"] = [P.PermissionsRevoke],
 
-        // RFID and security
-        ["IngestRfidEvent"] = [P.RfidIngest],
-        ["SearchRfidEvents"] = [P.RfidView],
-        ["SearchViolations"] = [P.ViolationsView],
-        ["ReviewViolation"] = [P.ViolationsReview],
-        ["SearchIncidents"] = [P.IncidentsView],
-        ["CreateIncident"] = [P.IncidentsManage],
-        ["GetIncident"] = [P.IncidentsView],
-        ["UpdateIncident"] = [P.IncidentsManage],
-        ["SearchBlacklist"] = [P.BlacklistView],
-        ["CreateBlacklistEntry"] = [P.BlacklistManage],
-        ["LiftBlacklistEntry"] = [P.BlacklistManage],
-
-        // Visitors
-        ["SearchVisitors"] = [P.VisitorsView],
-        ["CreateVisitor"] = [P.VisitorsManage],
-        ["SearchVisitorPasses"] = [P.VisitorsView],
-        ["CreateVisitorPass"] = [P.VisitorsManage],
-        ["ApproveVisitorPass"] = [P.VisitorsApprove],
-        ["CheckInVisitorPass"] = [P.VisitorsManage],
-        ["CheckOutVisitorPass"] = [P.VisitorsManage],
-        ["RevokeVisitorPass"] = [P.VisitorsManage],
-
-        // Dashboard, reports, audit
-        ["GetDashboardSummary"] = [P.DashboardView],
+        // Dashboard and audit
         ["Dashboard_Home"] = [P.DashboardView],
-        ["GetDashboardEventsTrend"] = [P.DashboardView],
-        ["GetDashboardRequestsByStatus"] = [P.DashboardView],
-        ["GetDashboardViolationsByType"] = [P.DashboardView],
-        ["GetDashboardCardsByStatus"] = [P.DashboardView],
-        ["GetDashboardOccupancy"] = [P.DashboardView],
         ["GetDashboardMyWork"] = [P.DashboardView],
         ["GetDashboardActivity"] = [P.DashboardView],
-        ["GetReport"] = [P.ReportsView],
-        ["ExportReport"] = [P.ReportsExport],
         ["SearchAuditLogs"] = [P.AuditView],
+        ["GetAuditTimeline"] = [P.AuditView],
 
-        // Administration and reference data
+        // User administration and reference data
         ["GetAdminUsers"] = [P.UsersManage],
-        ["CreateAdminUser"] = [P.UsersManage],
-        ["UpdateAdminUser"] = [P.UsersManage],
-        ["GetRoles"] = [P.RolesManage],
-        ["GetRolePermissions"] = [P.RolesManage],
-        ["SetRolePermissions"] = [P.RolesManage],
-        ["GetPermissionCatalog"] = [P.RolesManage],
+        ["UpdateAdminEmployee"] = [P.UsersManage],
         ["GetDepartments"] = [P.EmployeesView, P.EmployeesViewAll, P.ReferenceManage],
         ["CreateDepartment"] = [P.ReferenceManage],
         ["UpdateDepartment"] = [P.ReferenceManage],
+        ["GetLocations"] = [P.EmployeesView, P.EmployeesViewAll, P.ReferenceManage],
         ["CreateLocation"] = [P.ReferenceManage],
         ["UpdateLocation"] = [P.ReferenceManage],
-        ["GetReaders"] = [P.RfidView, P.ReferenceManage],
-        ["CreateReader"] = [P.ReferenceManage],
-        ["UpdateReader"] = [P.ReferenceManage],
-        ["GetSettings"] = [P.SettingsManage],
-        ["UpdateSetting"] = [P.SettingsManage],
     };
 
     /// <summary>Functions throttled per user (fixed one-minute window): function name to max calls per window.</summary>
     public static readonly IReadOnlyDictionary<string, int> RateLimits = new Dictionary<string, int>(StringComparer.Ordinal)
     {
-        ["IngestRfidEvent"] = 600,
         ["ReportLostCard"] = 10,
     };
 

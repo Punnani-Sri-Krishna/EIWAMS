@@ -109,7 +109,7 @@ public sealed class AccessRepository(IDbConnectionFactory factory) : RepositoryB
         });
 }
 
-public sealed class SecurityRepository(IDbConnectionFactory factory) : RepositoryBase(factory), ISecurityRepository
+public sealed class SecurityRepository(IDbConnectionFactory factory) : RepositoryBase(factory)
 {
     public Task<RfidIngestResultDto> IngestEventAsync(ActorContext actor, RfidEventRequest r)
         => QuerySingleAsync<RfidIngestResultDto>(StoredProcedures.RfidEventIngest, Write(actor, new
@@ -220,7 +220,7 @@ public sealed class SecurityRepository(IDbConnectionFactory factory) : Repositor
         });
 }
 
-public sealed class VisitorRepository(IDbConnectionFactory factory) : RepositoryBase(factory), IVisitorRepository
+public sealed class VisitorRepository(IDbConnectionFactory factory) : RepositoryBase(factory)
 {
     public Task<PagedResult<VisitorDto>> SearchVisitorsAsync(ActorContext actor, PagedQuery q)
         => QueryPagedAsync<VisitorDto>(StoredProcedures.VisitorSearch, Read(actor, new { q.Search }), q.Page, q.PageSize);
@@ -359,7 +359,11 @@ public sealed class AdminRepository(IDbConnectionFactory factory) : RepositoryBa
 {
     public async Task<PagedResult<AdminUserDto>> SearchUsersAsync(ActorContext actor, AdminUserQuery q)
     {
-        PagedResult<AdminUserRow> rows = await QueryPagedAsync<AdminUserRow>(StoredProcedures.AdminUserSearch, Read(actor, new { q.Search, q.IsActive }), q.Page, q.PageSize);
+        PagedResult<AdminUserRow> rows = await QueryPagedAsync<AdminUserRow>(StoredProcedures.AdminEmployeeSearch, Read(actor, new
+        {
+            q.Search,
+            q.IsActive,
+        }), q.Page, q.PageSize);
         return new PagedResult<AdminUserDto>
         {
             Items = rows.Items.Select(r => r.ToDto()).ToList(),
@@ -369,19 +373,51 @@ public sealed class AdminRepository(IDbConnectionFactory factory) : RepositoryBa
         };
     }
 
-    public async Task<AdminUserDto> SaveUserAsync(ActorContext actor, int? userId, SaveAdminUserRequest r)
+    public async Task<AdminUserDto> SaveEmployeeAsync(ActorContext actor, int employeeId, SaveAdminUserRequest r)
     {
-        AdminUserRow row = await QuerySingleAsync<AdminUserRow>(StoredProcedures.AdminUserSave, Write(actor, new
+        const int pageSize = HttpConstants.MaxPageSize;
+        PagedResult<AdminUserRow> firstPage = await QueryPagedAsync<AdminUserRow>(
+            StoredProcedures.AdminEmployeeSearch,
+            Read(actor, new { Search = (string?)null, IsActive = (bool?)null }),
+            1,
+            pageSize);
+        AdminUserRow? current = firstPage.Items.FirstOrDefault(row => row.EmployeeId == employeeId);
+        int pageCount = (firstPage.TotalCount + pageSize - 1) / pageSize;
+        for (int page = 2; current is null && page <= pageCount; page++)
         {
-            UserId = userId,
-            DisplayName = r.DisplayName!.Trim(),
-            Email = r.Email!.Trim(),
-            r.EntraObjectId,
+            PagedResult<AdminUserRow> nextPage = await QueryPagedAsync<AdminUserRow>(
+                StoredProcedures.AdminEmployeeSearch,
+                Read(actor, new { Search = (string?)null, IsActive = (bool?)null }),
+                page,
+                pageSize);
+            current = nextPage.Items.FirstOrDefault(row => row.EmployeeId == employeeId);
+        }
+
+        if (current is null)
+        {
+            throw AppException.NotFound(ApiMessages.NotFound);
+        }
+
+        IReadOnlyList<RoleDto> availableRoles = await QueryAsync<RoleDto>(StoredProcedures.RoleList, Read(actor));
+        Dictionary<string, int> roleIdsByName = availableRoles.ToDictionary(role => role.RoleName, role => role.RoleId, StringComparer.Ordinal);
+        string[] requestedRoles = r.Roles?.ToArray() ?? [];
+        if (requestedRoles.Any(role => !roleIdsByName.ContainsKey(role)))
+        {
+            throw AppException.Validation(ApiMessages.ValidationFailed, ["One or more role names are not supported."]);
+        }
+
+        int[] roleIds = requestedRoles.Select(role => roleIdsByName[role]).ToArray();
+        AdminUserRow row = await QuerySingleAsync<AdminUserRow>(StoredProcedures.AdminEmployeeSave, Write(actor, new
+        {
+            EmployeeId = employeeId,
+            RoleIds = JsonSerializer.Serialize(roleIds),
+            FacilityIds = current.FacilityIds ?? "[]",
+            current.AllFacilities,
             r.IsActive,
-            r.AllFacilities,
-            RoleIds = JsonSerializer.Serialize(r.RoleIds ?? []),
-            FacilityIds = JsonSerializer.Serialize(r.FacilityIds ?? []),
-            r.EmployeeId,
+            r.ManagerEmployeeId,
+            r.DepartmentId,
+            r.Designation,
+            r.LocationId,
         }));
         return row.ToDto();
     }
@@ -453,13 +489,15 @@ public sealed class AdminRepository(IDbConnectionFactory factory) : RepositoryBa
 
     private sealed class AdminUserRow
     {
-        public int UserId { get; set; }
+        public int EmployeeId { get; set; }
 
-        public string DisplayName { get; set; } = string.Empty;
+        public int? UserId { get; set; }
 
-        public string Email { get; set; } = string.Empty;
+        public string EmployeeNumber { get; set; } = string.Empty;
 
-        public Guid? EntraObjectId { get; set; }
+        public string FullName { get; set; } = string.Empty;
+
+        public string WorkEmail { get; set; } = string.Empty;
 
         public bool IsActive { get; set; }
 
@@ -471,35 +509,42 @@ public sealed class AdminRepository(IDbConnectionFactory factory) : RepositoryBa
 
         public string? FacilityIds { get; set; }
 
-        public string? FacilityNames { get; set; }
-
-        public int? EmployeeId { get; set; }
-
-        public string? EmployeeNumber { get; set; }
-
         public DateTime? LastLoginAtUtc { get; set; }
+
+        public int? DepartmentId { get; set; }
+
+        public string? DepartmentName { get; set; }
+
+        public int? ManagerEmployeeId { get; set; }
+
+        public string? ManagerName { get; set; }
+
+        public string? Designation { get; set; }
+
+        public int? LocationId { get; set; }
+
+        public string? LocationName { get; set; }
 
         public AdminUserDto ToDto() => new()
         {
             UserId = UserId,
-            DisplayName = DisplayName,
-            Email = Email,
-            EntraObjectId = EntraObjectId,
+            DisplayName = FullName,
+            Email = WorkEmail,
             IsActive = IsActive,
-            AllFacilities = AllFacilities,
-            RoleIds = SplitInts(RoleIds),
-            RoleNames = Split(RoleNames),
-            FacilityIds = SplitInts(FacilityIds),
-            FacilityNames = Split(FacilityNames),
+            Roles = Split(RoleNames),
             EmployeeId = EmployeeId,
             EmployeeNumber = EmployeeNumber,
             LastLoginAtUtc = LastLoginAtUtc,
+            DepartmentId = DepartmentId,
+            DepartmentName = DepartmentName,
+            ManagerEmployeeId = ManagerEmployeeId,
+            ManagerName = ManagerName,
+            Designation = Designation,
+            LocationId = LocationId,
+            LocationName = LocationName,
         };
 
         private static List<string> Split(string? value)
             => (value ?? string.Empty).Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-
-        private static List<int> SplitInts(string? value)
-            => Split(value).Select(v => int.Parse(v, CultureInfo.InvariantCulture)).ToList();
     }
 }

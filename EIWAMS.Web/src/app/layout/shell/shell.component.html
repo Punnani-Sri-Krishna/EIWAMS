@@ -1,49 +1,54 @@
 <header class="app-bar">
   <div class="bar-inner">
-    <button mat-icon-button class="hamburger" type="button" aria-label="Toggle navigation"
+    <button mat-icon-button class="hamburger" type="button" aria-label="Toggle navigation" aria-controls="mobile-nav"
             [attr.aria-expanded]="mobileOpen()" (click)="toggleMobile()">
       <mat-icon>{{ mobileOpen() ? 'close' : 'menu' }}</mat-icon>
     </button>
 
-    <a class="brand" routerLink="/dashboard">
-      <span class="brand-icon"><mat-icon>verified_user</mat-icon></span>
+    <a class="brand" routerLink="/dashboard" aria-label="EIWAMS home">
+      <span class="brand-icon" aria-hidden="true"><mat-icon>verified_user</mat-icon></span>
       <span class="brand-text">
         <span class="brand-name">EIWAMS</span>
-        <span class="brand-sub">Workplace Access</span>
+        <span class="brand-sub">ID cards &amp; access</span>
       </span>
     </a>
 
     <nav class="sections" aria-label="Main navigation">
-      @for (s of sections(); track s.section) {
-        @if (s.items.length === 1) {
-          <a mat-button class="nav-btn" [routerLink]="link(s.items[0].route)" routerLinkActive="active">
-            <mat-icon>{{ s.items[0].icon }}</mat-icon>
-            {{ s.items[0].label }}
-          </a>
-        } @else {
-          <button mat-button class="nav-btn" type="button" [class.active]="sectionActive(s)" [matMenuTriggerFor]="sectionMenu">
-            <mat-icon>{{ s.items[0].icon }}</mat-icon>
-            {{ s.section }}
-            <mat-icon iconPositionEnd>expand_more</mat-icon>
+      @for (e of nav(); track e.key) {
+        @if (e.children) {
+          <button mat-button class="nav-btn" type="button" [class.active]="entryActive(e)" [matMenuTriggerFor]="sectionMenu">
+            <mat-icon class="nav-icon" aria-hidden="true">{{ e.icon }}</mat-icon>
+            {{ e.label }}
+            <mat-icon iconPositionEnd aria-hidden="true">expand_more</mat-icon>
           </button>
           <mat-menu #sectionMenu="matMenu">
-            @for (i of s.items; track i.menuId) {
-              <a mat-menu-item [routerLink]="link(i.route)" routerLinkActive="menu-active">
-                <mat-icon>{{ i.icon }}</mat-icon>
-                <span>{{ i.label }}</span>
+            @for (c of e.children; track c.key) {
+              <a mat-menu-item [routerLink]="c.route" routerLinkActive="menu-active">
+                <mat-icon aria-hidden="true">{{ c.icon }}</mat-icon>
+                <span>{{ c.label }}</span>
               </a>
             }
           </mat-menu>
+        } @else {
+          <a mat-button class="nav-btn" [routerLink]="e.route" routerLinkActive="active"
+             [routerLinkActiveOptions]="{ exact: e.key === 'home' }">
+            <mat-icon class="nav-icon" aria-hidden="true">{{ e.icon }}</mat-icon>
+            {{ e.label }}
+            @if (badge(e); as n) {
+              <span class="nav-count" [attr.aria-label]="n + ' pending'">{{ n > 99 ? '99+' : n }}</span>
+            }
+          </a>
         }
       }
     </nav>
 
     <span class="spacer"></span>
 
-    <button mat-icon-button type="button" class="bar-icon" aria-label="Notifications" matTooltip="Notifications"
+    <button mat-icon-button type="button" class="bar-icon"
+            [attr.aria-label]="unread() ? 'Notifications, ' + unread() + ' unread' : 'Notifications'" matTooltip="Notifications"
             [matMenuTriggerFor]="notifMenu" (menuOpened)="loadLatest()">
       <mat-icon [matBadge]="unread() || null" matBadgeColor="warn" matBadgeSize="small" [matBadgeHidden]="!unread()"
-                aria-hidden="false">notifications</mat-icon>
+                aria-hidden="true">notifications</mat-icon>
     </button>
     <mat-menu #notifMenu="matMenu" class="notif-menu" xPosition="before">
       <div class="notif-head" (click)="$event.stopPropagation()">
@@ -64,34 +69,51 @@
       <a mat-menu-item routerLink="/notifications"><mat-icon>list</mat-icon><span>View all</span></a>
     </mat-menu>
 
-    <button mat-button type="button" class="user-btn" [matMenuTriggerFor]="userMenu" aria-label="User menu">
-      <span class="avatar">{{ initials() }}</span>
+    <button mat-button type="button" class="user-btn" [matMenuTriggerFor]="userMenu"
+            [attr.aria-label]="'Account menu for ' + (user()?.displayName ?? 'user')">
+      @if (session.photoUrl(); as photo) {
+        <img class="avatar avatar-img" [src]="photo" alt="" />
+      } @else {
+        <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+      }
       <span class="user-name">{{ user()?.displayName }}</span>
     </button>
     <mat-menu #userMenu="matMenu" xPosition="before">
       <div class="user-head">
         <strong>{{ user()?.displayName }}</strong>
         <small>{{ user()?.email }}</small>
-        <small class="roles">{{ user()?.roles?.join(', ') }}</small>
+        @if (roleText()) {
+          <small class="roles">{{ roleText() }}</small>
+        }
       </div>
       <mat-divider />
-      <a mat-menu-item routerLink="/profile"><mat-icon>person</mat-icon><span>Profile</span></a>
+      <a mat-menu-item routerLink="/profile"><mat-icon>person</mat-icon><span>My profile</span></a>
       <button mat-menu-item type="button" (click)="signOut()"><mat-icon>logout</mat-icon><span>Sign out</span></button>
     </mat-menu>
   </div>
 
   @if (mobileOpen()) {
-    <nav class="mobile-panel" aria-label="Mobile navigation">
-      @for (s of sections(); track s.section) {
-        <div class="mobile-section">
-          <div class="mobile-section-title">{{ s.section }}</div>
-          @for (i of s.items; track i.menuId) {
-            <a class="mobile-link" [routerLink]="link(i.route)" routerLinkActive="active">
-              <mat-icon>{{ i.icon }}</mat-icon>
-              <span>{{ i.label }}</span>
-            </a>
-          }
-        </div>
+    <nav class="mobile-panel" id="mobile-nav" aria-label="Mobile navigation">
+      @for (e of nav(); track e.key) {
+        @if (e.children) {
+          <div class="mobile-section">
+            <div class="mobile-section-title">{{ e.label }}</div>
+            @for (c of e.children; track c.key) {
+              <a class="mobile-link" [routerLink]="c.route" routerLinkActive="active">
+                <mat-icon aria-hidden="true">{{ c.icon }}</mat-icon>
+                <span>{{ c.label }}</span>
+              </a>
+            }
+          </div>
+        } @else {
+          <a class="mobile-link" [routerLink]="e.route" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: e.key === 'home' }">
+            <mat-icon aria-hidden="true">{{ e.icon }}</mat-icon>
+            <span>{{ e.label }}</span>
+            @if (badge(e); as n) {
+              <span class="nav-count" [attr.aria-label]="n + ' pending'">{{ n > 99 ? '99+' : n }}</span>
+            }
+          </a>
+        }
       }
     </nav>
   }

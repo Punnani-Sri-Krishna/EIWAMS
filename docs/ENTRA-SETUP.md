@@ -91,15 +91,16 @@ On Azure set the GitHub environment variables `AUTH_ENTRA_*` ([AZURE-DEPLOYMENT.
 1. `Users.EntraObjectId = oid` -> linked user.
 2. Else an active user with `EntraObjectId IS NULL` whose e-mail matches `email`, `preferred_username` or `upn`
    -> linked on first sign-in (audited).
-3. Else 403 (not provisioned).
+3. If no linked user or matching employee exists, an employee record is provisioned from Entra claims and linked.
 
-Users are pre-provisioned by a SystemAdmin (**Admin > Users**, `POST /api/v1/admin/users`) with roles and facility
-scope. Deactivated users are denied even with a valid token (TC-02).
+Every account is employee-backed and receives the Employee role. SystemAdmin manages employee details and higher
+workflow roles through **Admin > Employees & roles**. Deactivated users are denied even with a valid token (TC-02).
 
 ## 7. Local development without Entra
 
-`Auth:Mode=DevHeader`: the sign-in page lists `GET /api/v1/dev/users` (seeded users 1-8) and the SPA sends `X-User-Id`.
-`v1/dev/users` returns 404 in EntraId mode. **Never** enable DevHeader on a reachable host.
+`Auth:Mode=DevHeader` is for local development only and requires explicitly provisioned local employee accounts; the
+repository does not seed demo users. The SPA sends `X-User-Id`; `v1/dev/users` returns 404 in EntraId mode. **Never**
+enable DevHeader on a reachable host.
 
 ## Troubleshooting
 

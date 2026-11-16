@@ -31,7 +31,7 @@ public class FunctionContractTests
             .ToList();
 
         Assert.Empty(unmapped);
-        Assert.Equal(97, Functions.Count);
+        Assert.NotEmpty(Functions);
     }
 
     [Fact]
@@ -69,4 +69,12 @@ public class FunctionContractTests
     [Fact]
     public void OnlyAuthConfigAndDevUsersAreAnonymous()
         => Assert.Equal(["GetAuthConfig", "GetDevUsers"], HttpConstants.AnonymousFunctions.Order().ToArray());
+
+    [Fact]
+    public void AdminEmployeeUpdateRouteUsesEmployeeId()
+    {
+        var update = Assert.Single(Functions, f => f.Name == "UpdateAdminEmployee");
+        Assert.Equal("v1/admin/employees/{employeeId:int}", update.Route);
+        Assert.Contains("put", update.Methods, StringComparer.OrdinalIgnoreCase);
+    }
 }

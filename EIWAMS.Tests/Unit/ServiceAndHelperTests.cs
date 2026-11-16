@@ -2,9 +2,9 @@ using EIWAMS.API.Helpers;
 using EIWAMS.API.Middleware;
 using EIWAMS.Application.Abstractions;
 using EIWAMS.Application.Common;
+using EIWAMS.Application.Models.DTOs.Admin;
 using EIWAMS.Application.Models.DTOs.Access;
 using EIWAMS.Application.Models.DTOs.Common;
-using EIWAMS.Application.Models.DTOs.Insights;
 using EIWAMS.Application.Utilities;
 using EIWAMS.Domain.Services.Implementations;
 using EIWAMS.Infrastructure.Repositories.Interfaces;
@@ -54,45 +54,6 @@ public class ServiceAndHelperTests
     }
 
     [Fact]
-    public async Task InsightsService_UnknownReportIsNotFound()
-    {
-        var repository = Substitute.For<IInsightsRepository>();
-        var service = new InsightsService(repository, Accessor());
-
-        AppException ex = await Assert.ThrowsAsync<AppException>(() => service.RunReportAsync("sys.objects", new ReportQuery()));
-        Assert.Equal(ErrorType.NotFound, ex.ErrorType);
-    }
-
-    [Fact]
-    public async Task InsightsService_ReportRowsUseCamelCaseColumnKeys()
-    {
-        var repository = Substitute.For<IInsightsRepository>();
-        repository.RunReportAsync(Actor, Arg.Any<string>(), Arg.Any<ReportQuery>(), false).Returns(new ReportResult
-        {
-            Columns = ["EmployeeNumber", "DeniedCount"],
-            Rows = [new object?[] { "EMP0007", 3 }],
-            TotalCount = 1,
-            Page = 1,
-            PageSize = 20,
-        });
-        var service = new InsightsService(repository, Accessor());
-
-        PagedResult<IDictionary<string, object?>> result = await service.RunReportAsync("access-activity", new ReportQuery());
-
-        Assert.Equal("EMP0007", result.Items.Single()["employeeNumber"]);
-        Assert.Equal(3, result.Items.Single()["deniedCount"]);
-    }
-
-    [Fact]
-    public void BindQuery_FromAfterToIsValidationError()
-    {
-        var context = new DefaultHttpContext();
-        context.Request.QueryString = new QueryString("?from=2026-02-01&to=2026-01-01");
-        AppException ex = Assert.Throws<AppException>(() => FunctionBase.BindQuery<ReportQuery>(context.Request));
-        Assert.Equal(ErrorType.Validation, ex.ErrorType);
-    }
-
-    [Fact]
     public void BindQuery_InvalidNumberIsValidationErrorAndSearchIsKeptAsData()
     {
         var context = new DefaultHttpContext();
@@ -101,6 +62,22 @@ public class ServiceAndHelperTests
 
         context.Request.QueryString = QueryString.Create("search", "x' OR 1=1 --");
         Assert.Equal("x' OR 1=1 --", FunctionBase.BindQuery<PagedQuery>(context.Request).Search);
+    }
+
+    [Fact]
+    public async Task AdminService_UpdateEmployeePassesEmployeeIdToRepository()
+    {
+        const int employeeId = 42;
+        var repository = Substitute.For<IAdminRepository>();
+        var request = new SaveAdminUserRequest { Roles = ["Employee", "Manager"], IsActive = true };
+        var expected = new AdminUserDto { EmployeeId = employeeId };
+        repository.SaveEmployeeAsync(Actor, employeeId, request).Returns(expected);
+        var service = new AdminService(repository, Accessor());
+
+        AdminUserDto actual = await service.UpdateEmployeeAsync(employeeId, request);
+
+        Assert.Same(expected, actual);
+        await repository.Received(1).SaveEmployeeAsync(Actor, employeeId, request);
     }
 
     [Fact]

@@ -3,8 +3,8 @@ import { Observable } from 'rxjs';
 
 import { PagedResult, QueryParams } from '../../core/models/api.models';
 import { ApiService } from '../../core/services/api.service';
-import { Card } from '../cards/cards.models';
 import {
+  Card,
   DeactivateEmployeeRequest,
   EmployeeDetail,
   EmployeeHistory,

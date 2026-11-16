@@ -38,7 +38,7 @@ describe('permissionGuard', () => {
   });
 
   it('redirects to /unauthorized when permission is missing', () => {
-    const result = run(['Audit.View']);
+    const result = run(['Users.Manage']);
     expect(result instanceof UrlTree).toBe(true);
     expect(TestBed.inject(Router).serializeUrl(result as UrlTree)).toBe('/unauthorized');
   });

@@ -16,8 +16,8 @@ RETURN
     SELECT v.EmployeeId FROM dbo.fn_VisibleEmployees(@UserId) v
     UNION
     SELECT e.EmployeeId FROM dbo.Employees e
-    JOIN dbo.fn_UserLocationScope(@UserId) s ON s.LocationId = e.LocationId
-    WHERE EXISTS (SELECT 1 FROM dbo.fn_UserPermissions(@UserId) p
+    WHERE (e.LocationId IS NULL OR e.LocationId IN (SELECT LocationId FROM dbo.fn_UserLocationScope(@UserId)))
+      AND EXISTS (SELECT 1 FROM dbo.fn_UserPermissions(@UserId) p
                   WHERE p.PermissionCode IN (N'Cards.ViewAll', N'Cards.Issue', N'Cards.Block', N'Cards.Verify'));
 GO
 

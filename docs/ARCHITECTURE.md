@@ -20,10 +20,9 @@ or Azure App Service (SPA)  ->  Flex Consumption Function App (Azure)
                                      v
                                    EIWAMS.Infrastructure  Dapper repositories, SqlDbConnectionFactory, Entra token validation
                                      v
-                                   SQL Server (EIWAMS)    tables, views, functions, usp_* procedures (SQL\01..12)
+                                   SQL Server (EIWAMS)    tables, views, functions, usp_* procedures (SQL\01..13)
 ```
 
-RFID readers or a gateway/simulator post normalized events to `POST /api/v1/rfid/events` (permission `Rfid.Ingest`).
 There are no background jobs, queues, timers, SignalR hubs, caches or e-mail: every state change happens inside an
 HTTP request and a SQL transaction, and users are informed through in-app `Notifications`.
 
@@ -31,11 +30,11 @@ HTTP request and a SQL transaction, and users are informed through in-app `Notif
 
 | Project | Responsibility |
 |---|---|
-| `EIWAMS.Web` | Standalone components, signals. Session (`v1/me`), DB-driven top navigation (`v1/me/menu`), guards, interceptors (auth, correlation id, errors), Chart.js dashboard. UI visibility never replaces server authorization. |
+| `EIWAMS.Web` | Standalone components, signals. Session (`v1/me`), permission-driven top navigation, guards, interceptors (auth, correlation id, errors), focused employee/request dashboard. UI visibility never replaces server authorization. |
 | `EIWAMS.API` | HTTP triggers under `v1/...`, middleware, request binding, response envelope, CSV export. No business logic. |
 | `EIWAMS.Domain` | Services: input validation, workflow orchestration, calls to repositories. |
 | `EIWAMS.Application` | Contracts: DTOs (camelCase JSON), validators, `ApiResponse<T>`, `PagedResult<T>`, `AppException`, `ErrorType`, constants (permission codes, statuses). |
-| `EIWAMS.Infrastructure` | Dapper repositories (`RepositoryBase` maps SQL errors), connection factory, Entra JWT validation, SQL scripts `SQL\01..12`. |
+| `EIWAMS.Infrastructure` | Dapper repositories (`RepositoryBase` maps SQL errors), connection factory, Entra JWT validation, SQL scripts `SQL\01..13`. |
 | `EIWAMS.Tests` | xUnit + NSubstitute unit tests (validators, permission map coverage, workflow, middleware) and SQL integration tests against `EIWAMS_Test` (skipped when unavailable). |
 
 ## Request pipeline
@@ -56,27 +55,25 @@ HTTP request and a SQL transaction, and users are informed through in-app `Notif
 
 ## Authorization model
 
-* **Roles** (8): Employee, Manager, HRAdmin, SecurityTeam, FacilityAdmin, Reception, SystemAdmin, Auditor.
+* **Roles**: Employee (required), Manager, HRAdmin, SecurityHead, SecurityTeam, IdCardTeam, AccessControlTeam, SystemAdmin.
+  Reception, Auditor and FacilityAdmin are retired; users with FacilityAdmin move to AccessControlTeam.
 * **Permissions** (`Module.Action`, for example `Cards.Block`, `Approvals.Decide`) granted through `RolePermissions`.
   Users can hold several roles. Changes apply on the next request; no token refresh or redeploy.
 * **Facility scope**: `Users.AllFacilities` or `UserFacilityScopes`; a scope on a parent location covers its
   descendants (`fn_UserCanAccessLocation`). Out-of-scope rows return 404 (concealed).
 * **Self/team scope**: `Employees.View` without `Employees.ViewAll` returns self and direct reports only.
-* **Menus**: `Menus` + `MenuPermissions` drive the top navigation sections (contract section 4).
+* **Menus**: the SPA computes its compact top navigation from the employee's permissions and roles; `v1/me/menu` is not used by the UI.
 
 ## Workflows (summary)
 
 | Entity | States |
 |---|---|
-| Access request | Draft -> Submitted -> PendingApproval (Manager -> Security -> FacilityAdmin) -> Approved -> Provisioned; Returned, Rejected, Cancelled, Expired |
+| Access request | Submitted -> Manager -> Security Head/Security -> Access Control -> Provisioned; Returned, Rejected, Cancelled, Expired |
 | Card | Requested -> Active -> Lost / Blocked / Damaged / Expired / Deactivated (report lost blocks immediately) |
-| Card request | Submitted -> VerificationPending -> Approved -> Issued; Rejected, Cancelled |
-| Violation / incident | Open -> UnderReview -> Confirmed / FalsePositive -> Closed |
-| Visitor pass | PendingApproval -> Approved -> Active -> CheckedOut; Expired, Revoked |
+| Card request | Submitted -> Manager -> HR -> Security (lost cards) -> ID Card Team -> Printed -> Issued; Rejected, Cancelled |
 
-RFID ingest (`usp_RfidEvent_Ingest`) deduplicates on `(ReaderId, ExternalEventId)`, evaluates employee, card, permission
-(location or ancestor) and blacklist, writes `AccessLogs` and raises `AccessViolations`. Controller sync is simulated
-(`ControllerCommands`, `Pending -> Synced`).
+Employees originate in HRMS/Entra. EIWAMS links by work email or provisions an employee record from Entra claims at
+first sign-in; there is no employee-creation screen in the application.
 
 ## Data protection
 

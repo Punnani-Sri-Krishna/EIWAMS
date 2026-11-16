@@ -48,7 +48,7 @@ public static class HttpConstants
     // Authenticated-only functions: no permission code, but a valid active user is required (except anonymous ones).
     public static readonly string[] NoPermissionFunctions =
     [
-        "GetAuthConfig", "GetDevUsers", "GetMe", "GetMyMenu", "Me_GetProfile", "Me_UpdateProfile", "Me_GetPhoto", "Me_PutPhoto", "GetLookups", "GetLocations", "GetAuditTimeline",
+        "GetAuthConfig", "GetDevUsers", "GetMe", "GetMyMenu", "Me_GetProfile", "Me_UpdateProfile", "Me_GetPhoto", "Me_PutPhoto", "GetLookups",
         "GetNotifications", "GetUnreadNotificationCount", "MarkNotificationRead", "MarkAllNotificationsRead",
     ];
 }
@@ -263,8 +263,8 @@ public static class StoredProcedures
     public const string AuditSearch = "dbo.usp_Audit_Search";
     public const string AuditTimeline = "dbo.usp_Audit_Timeline";
 
-    public const string AdminUserSearch = "dbo.usp_AdminUser_Search";
-    public const string AdminUserSave = "dbo.usp_AdminUser_Save";
+    public const string AdminEmployeeSearch = "dbo.usp_AdminEmployee_Search";
+    public const string AdminEmployeeSave = "dbo.usp_AdminEmployee_Save";
     public const string RoleList = "dbo.usp_Role_List";
     public const string RoleGetPermissions = "dbo.usp_Role_GetPermissions";
     public const string RoleSetPermissions = "dbo.usp_Role_SetPermissions";

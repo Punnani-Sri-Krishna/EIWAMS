@@ -22,8 +22,9 @@ EIWAMS/
 Reference implementation: `DLQTS\` (read-only, to be deleted later). Never reference, copy-link, or modify DLQTS files.
 Copy patterns, not names: everything is `EIWAMS`.
 
-Stack: Angular + Angular Material + Bootstrap 5 + SCSS + Chart.js + MSAL; Azure Functions (.NET 10 isolated);
-Dapper; SQL Server stored procedures only (no EF Core, no inline SQL); Microsoft Entra ID; DB-driven roles/permissions/menus.
+Stack: Angular + Angular Material + Bootstrap 5 + SCSS + MSAL; Azure Functions (.NET 10 isolated);
+Dapper; SQL Server stored procedures only (no EF Core, no inline SQL); Microsoft Entra ID; DB-driven roles/permissions
+with a permission-driven UI.
 Out of scope (do not build): email/SMTP, mail templates, reminder/escalation engines, blob/storage queues, file upload management (the only binary data is the employee photo,
 stored in SQL `VARBINARY` and sent as base64 JSON, see §5.5),
 service bus/event bus, Redis, background jobs/timers, Hangfire, SignalR, microservices.
@@ -63,130 +64,71 @@ when it lacks the `EmployeeNumber` column.
 * Every mutating stored procedure takes `@ActorUserId, @CorrelationId, @IpAddress`, writes `AuditLogs`, and writes in-app
   `Notifications` in the same transaction where applicable.
 
-## 4. Roles, permissions, menus (seeded)
+## 4. Employees, roles and navigation
 
-EIWAMS is ID Card + Workplace Access Management for employees that already exist in HRMS / Entra ID. Employees are
-**not created in the EIWAMS UI** (HR sync / admin API only). No AI, agent or chatbot features in the product.
+Every signed-in identity has an employee record. Entra sign-in links to an existing active employee by work email; if
+none exists, the employee is provisioned from the Entra claims. Employee creation and HR onboarding remain outside the
+EIWAMS UI. An employee can hold multiple workflow roles.
 
-Roles (11): `Employee`, `Manager`, `HRAdmin`, `SecurityTeam` (UI label "Security Officer"), `SecurityHead`,
-`IdCardTeam`, `AccessControlTeam`, `FacilityAdmin`, `Reception`, `SystemAdmin`, `Auditor`.
+Assignable roles are `Employee` (always present), `Manager`, `HRAdmin` (labelled HR), `SecurityHead`, `SecurityTeam`
+(labelled Security), `IdCardTeam`, `AccessControlTeam`, and `SystemAdmin`. Reception, Auditor and FacilityAdmin are
+retired; former FacilityAdmin grants move to AccessControlTeam. `SystemAdmin` manages Employees & roles, Locations and
+Departments. The SQL seed is the source of truth for individual permission grants.
 
-Permission codes (`Module.Action`; **new in v2** marked with *):
+Core permission codes used by the simplified application:
 
 | Module | Codes |
 |---|---|
 | Dashboard | `Dashboard.View` |
-| Employees | `Employees.View` (self/team), `Employees.ViewAll`, `Employees.Manage`, `Employees.Transfer`, `Employees.Deactivate`, `Employees.Sync`* |
-| Cards | `Cards.View`, `Cards.ViewAll`, `Cards.Request`, `Cards.Verify` (legacy, kept in seed, unused by the v2 flow and menus), `Cards.Issue`, `Cards.Block`, `Cards.ManagerApprove`*, `Cards.HrVerify`*, `Cards.SecurityReview`*, `Cards.Process`* |
-| Access | `AccessRequests.View`, `AccessRequests.ViewAll`, `AccessRequests.Create`, `Approvals.Decide`, `Approvals.Team`* |
+| Employees | `Employees.View`, `Employees.ViewAll`, `Employees.Manage` |
+| Cards | `Cards.View`, `Cards.ViewAll`, `Cards.Request`, `Cards.ManagerApprove`, `Cards.HrVerify`, `Cards.SecurityReview`, `Cards.Process` |
+| Access | `AccessRequests.View`, `AccessRequests.ViewAll`, `AccessRequests.Create`, `Approvals.Decide`, `Approvals.Team` |
 | Permissions | `Permissions.View`, `Permissions.Provision`, `Permissions.Revoke` |
-| RFID | `Rfid.View`, `Rfid.Ingest` |
-| Security | `Violations.View`, `Violations.Review`, `Incidents.View`, `Incidents.Manage`, `Blacklist.View`, `Blacklist.Manage` |
-| Visitors | `Visitors.View`, `Visitors.Manage`, `Visitors.Approve` |
-| Reports | `Reports.View`, `Reports.Export`, `Audit.View` |
-| Admin | `Users.Manage`, `Roles.Manage`, `Reference.Manage`, `Settings.Manage` |
+| Admin | `Users.Manage`, `Reference.Manage` |
 
-Role grants (seeded with MERGE; existing grants are kept, v2 additions marked *):
+Role grants are maintained by the SQL seed:
 
 | Role | Grants |
 |---|---|
-| Employee | `Dashboard.View`, `Employees.View`, `Cards.View`, `Cards.Request`, `AccessRequests.View`, `AccessRequests.Create` |
-| Manager | Employee grants + `Approvals.Decide`, `Permissions.View`, `Reports.View`, `Approvals.Team`*, `Cards.ManagerApprove`* |
-| HRAdmin | Employee grants + `Employees.ViewAll/Manage/Transfer/Deactivate`, `Cards.ViewAll/Issue`, `Reports.View/Export`, `Cards.HrVerify`*, `Employees.Sync`* |
-| SecurityTeam | Employee grants + `Cards.ViewAll/Verify/Block/Issue`, `Approvals.Decide`, `Permissions.View/Revoke`, `Rfid.View/Ingest`, `Violations.*`, `Incidents.*`, `Blacklist.*`, `Visitors.View`, `Reports.View/Export`, `Audit.View`, `Cards.SecurityReview`* |
-| SecurityHead* | `Dashboard.View`, `AccessRequests.View`, `Approvals.Decide`, `Cards.SecurityReview`, `Reports.View` |
-| IdCardTeam* | `Dashboard.View`, `Cards.Process`, `Cards.ViewAll`, `Employees.View` |
-| AccessControlTeam* | `Dashboard.View`, `AccessRequests.View`, `AccessRequests.ViewAll`, `Approvals.Decide`, `Permissions.View`, `Permissions.Provision` |
-| FacilityAdmin | Employee grants + `Approvals.Decide`, `Permissions.*`, `Rfid.View`, `Visitors.View/Approve`, `Reference.Manage`, `Reports.View` (unchanged) |
-| Reception | `Dashboard.View`, `Employees.View`, `Visitors.*`, `Rfid.View` (unchanged) |
-| SystemAdmin | every code (including all new codes) |
-| Auditor | `Dashboard.View`, every `*.View`/`*.ViewAll`, `Reports.*`, `Audit.View` (read-only; no new action codes) |
+| Employee | Self-service profile, ID card requests and access requests |
+| Manager | Employee grants plus manager-stage approvals and team requests |
+| HRAdmin | Employee grants plus employee directory and HR card verification |
+| SecurityHead, SecurityTeam | Employee grants plus security-stage workflow approvals |
+| IdCardTeam | ID card processing queue |
+| AccessControlTeam | Access review and access provisioning |
+| SystemAdmin | All application permissions and employee/reference administration |
 
 Automatic role grants (in `usp_User_ResolveEntra` and `usp_Employee_Sync`): every user linked to an Active employee
 holds `Employee`; a user whose employee has at least one Active direct report (`Employees.ManagerEmployeeId`) is granted
 `Manager`. Roles are only added automatically, never removed automatically.
 
 Facility scope: `Users.AllFacilities` bit plus `UserFacilityScopes(UserId, LocationId)`. A scope on a parent location covers
-all descendants (`fn_UserCanAccessLocation`). SystemAdmin, Auditor, Sai Sharanya and Arvind Access Control have
-AllFacilities. Approver lookup for the stage roles `SecurityHead`, `SecurityTeam`, `AccessControlTeam` uses facility scope
-when the user has scopes, and treats `AllFacilities=1` as covering everything.
+all descendants (`fn_UserCanAccessLocation`). Approver lookup for the stage roles `SecurityHead`, `SecurityTeam`,
+`AccessControlTeam` uses facility scope when the user has scopes, and treats `AllFacilities=1` as covering everything.
 
 ### Menus
 
-`Menus` + `MenuPermissions` drive the **top navigation** (seeded via MERGE keyed on `Route`). `section` is the top-level
-item; a section with one entry renders as a link, more than one as a dropdown. Menu rows not listed below are set
-`IsActive = 0` (not deleted) — this deactivates the old `/access-requests` and `/approvals` entries. `v1/me/menu`
-returns only active rows the caller has any listed permission for, ordered by `sectionOrder, sortOrder`.
+The SPA computes the **top navigation** from the signed-in employee's permissions and roles. It does not use a menu
+catalog endpoint. The navigation is Home; Requests (raise ID card, raise access, My requests); an Approvals hub with
+only the queues the employee can action; ID Card Processing; Access Provisioning; Employees; Admin (Employees & roles,
+Locations, Departments); notifications; and the profile/sign-out menu.
 
-| Section (sectionOrder) | sortOrder | Label | Route | Icon | Permission (any) |
-|---|---|---|---|---|---|
-| Home (1) | 1 | Home | `/dashboard` | `home` | Dashboard.View |
-| My Profile (2) | 1 | My Profile | `/profile` | `account_circle` | Dashboard.View |
-| Requests (3) | 1 | Raise ID Card Request | `/cards/requests/new` | `badge` | Cards.Request |
-| Requests | 2 | Raise Access Request | `/access-requests/new` | `vpn_key` | AccessRequests.Create |
-| Requests | 3 | My Requests | `/my-requests` | `assignment` | Cards.View |
-| Approvals (4) | 1 | Pending Approvals | `/approvals/manager` | `pending_actions` | Cards.ManagerApprove |
-| Approvals | 2 | Team Requests | `/approvals/team` | `groups` | Approvals.Team |
-| Approvals | 3 | HR Verification Queue | `/approvals/hr` | `fact_check` | Cards.HrVerify |
-| Approvals | 4 | ID Card Processing Queue | `/approvals/id-card` | `print` | Cards.Process |
-| Approvals | 5 | Security Approvals | `/approvals/security` | `shield` | Cards.SecurityReview |
-| Approvals | 6 | Access Requests Review | `/approvals/access` | `task_alt` | Approvals.Decide |
-| Approvals | 7 | Access Provisioning | `/permissions/provision` | `lock_open` | Permissions.Provision |
-| Notifications (5) | 1 | Notifications | `/notifications` | `notifications` | Dashboard.View |
-| Directory (6) | 1 | Employees | `/employees` | `contacts` | Employees.View, Employees.ViewAll |
-| Directory | 2 | Cards | `/cards` | `contactless` | Cards.ViewAll |
-| Directory | 3 | Permissions | `/permissions` | `verified_user` | Permissions.View |
-| Security (7) | 1 | RFID Monitor | `/rfid-monitor` | `sensors` | Rfid.View |
-| Security | 2 | Violations | `/violations` | `gpp_maybe` | Violations.View |
-| Security | 3 | Incidents | `/incidents` | `policy` | Incidents.View |
-| Security | 4 | Blacklist | `/blacklist` | `block` | Blacklist.View |
-| Security | 5 | Visitors | `/visitors` | `person_pin_circle` | Visitors.View |
-| Insights (8) | 1 | Reports | `/reports` | `analytics` | Reports.View |
-| Insights | 2 | Audit Trail | `/audit` | `history` | Audit.View |
-| Admin (9) | 1 | Users | `/admin/users` | `manage_accounts` | Users.Manage |
-| Admin | 2 | Roles & Permissions | `/admin/roles` | `admin_panel_settings` | Roles.Manage |
-| Admin | 3 | Departments | `/admin/departments` | `apartment` | Reference.Manage |
-| Admin | 4 | Locations & Zones | `/admin/locations` | `location_city` | Reference.Manage |
-| Admin | 5 | RFID Readers | `/admin/readers` | `settings_input_antenna` | Reference.Manage |
-| Admin | 6 | Settings | `/admin/settings` | `tune` | Settings.Manage |
+| Area | Entry | Access |
+|---|---|---|
+| Home | Dashboard | `Dashboard.View` |
+| Requests | ID card, access request, My requests | `Cards.Request`, `AccessRequests.Create`, `Cards.View` |
+| Approvals | Permission-driven tabs in one hub | Workflow approval permissions |
+| ID Card Processing | Processing queue | `Cards.Process` |
+| Access Provisioning | Provisioning queue | `Permissions.Provision` |
+| Employees | Read-only directory | `Employees.ViewAll` |
+| Admin | Employees & roles | `Users.Manage` |
+| Admin | Locations and Departments | `Reference.Manage` |
+| Profile | My profile and sign out | Authenticated employee |
 
-### Seed and demo users
+### Test data
 
-DevHeader picker users (fixed `UserId`s; employees by `EmployeeNumber`):
-
-| UserId | Display name | Email | Roles | Employee |
-|---|---|---|---|---|
-| 1 | System Administrator | `admin@eiwams.local` | SystemAdmin | - |
-| 2-10 | existing seed/demo users (Hari HR, Meera Manager, Sanjay Security, Farah Facility Admin, Ravi Reception, Esha Employee, Arjun Auditor, Vikram, Priya) | existing | existing roles; **Farah (5) additionally gets AccessControlTeam** | existing |
-| 11 | Sai Sharanya | `sai.sharanya@eiwams.local` | Employee, Manager, SecurityHead (AllFacilities=1) | EMP0011, ENG, "Engineering Manager" |
-| 12 | Isha Card Desk | `idcard.team@eiwams.local` | Employee, IdCardTeam | EMP0012, HR, "ID Card Officer" |
-| 13 | Arvind Access Control | `access.control@eiwams.local` | Employee, AccessControlTeam (AllFacilities=1) | EMP0013, SEC, "Access Control Officer" |
-| 14 | Kiran Das | `kiran.das@eiwams.local` | Employee (reports to Sai) | EMP0014, ENG, "Software Engineer" |
-| 15 | Neha Joshi | `neha.joshi@eiwams.local` | Employee (reports to Sai) | EMP0015, ENG, "QA Engineer" |
-
-(Decision: the spec's EMP0012/EMP0013 for Kiran/Neha are reassigned to EMP0014/EMP0015 so every demo user has an
-employee record; ids 11-15 are free in the current seed. If a fixed id is taken in an existing database, the demo
-script skips that row rather than failing.) Every employee gets a `Designation`; a few get profile fields.
-
-Demo locations (under the existing `BLR` campus; codes are unique keys):
-
-| Code | Name | Type | Parent | Restricted |
-|---|---|---|---|---|
-| `BLR-BA` | Building A | Building | BLR | 0 |
-| `BLR-BA-F1` | Floor 1 | Floor | BLR-BA | 0 |
-| `BLR-BA-WE` | East Wing | Wing | BLR-BA | 0 |
-| `BLR-BA-WW` | West Wing | Wing | BLR-BA | 0 |
-| `BLR-BB` | Building B | Building | BLR | 0 |
-| `BLR-BB-F1` / `BLR-BB-F2` | Floor 1 / Floor 2 | Floor | BLR-BB | 0 |
-| `BLR-CO` | Corporate Office | Building | BLR | 0 |
-| `BLR-CO-F1` | Floor 1 | Floor | BLR-CO | 0 |
-| `BLR-CO-EXE` | Executive Wing | Wing | BLR-CO | 1 |
-| `BLR-DCB` | Data Center | Building | BLR | 1 |
-| `BLR-DCB-H1` | Server Hall 1 | Zone | BLR-DCB | 1 |
-
-`Locations.LocationType` CHECK becomes `Campus, Building, Floor, Wing, Zone` (also in `usp_Location_Save` validation).
-Demo card requests exist in every v2 status and access requests in every stage, created through the SPs in a separate
-run-once block keyed on a marker (`SystemSettings` key `Demo.V2Seeded`) so it also runs on existing dev databases.
+The standard seed contains roles, permissions and reference data only. It does not create sample employees or
+workflow records. Integration tests provision isolated employees and requests in `EIWAMS_Test`.
 
 ## 5. Workflows
 
@@ -310,24 +252,18 @@ Optional shortcut: decision body `provisionNow: true` at the `AccessControl` sta
 `Permissions.Provision`) approves and provisions atomically. Notifications go to the requester and next-stage approvers
 (route `/access-requests/{id}`).
 
-### 5.4 Other workflows (unchanged)
+### 5.4 Employee lifecycle
 
-* RFID ingest (`usp_RfidEvent_Ingest`): dedupe on `(ReaderId, ExternalEventId)` (duplicates return the original
-  result), resolve card, evaluate employee status, card status/expiry, active in-date permission for the reader location
-  or an ancestor (or the location is not restricted), and the blacklist. It persists `AccessLogs` and creates
-  `AccessViolations` (BlockedCard, ExpiredPermission, UnauthorizedZone, RepeatedDenied when 3+ denials in 10 minutes,
-  unknown card leads to EventAnomaly with Review status).
-* Violation: `Open -> UnderReview -> Confirmed | FalsePositive -> Closed`. Incident has the same states plus assignment.
-* Visitor pass: `PendingApproval -> Approved -> Active (check-in) -> CheckedOut`, or `Expired` / `Revoked`.
-* Employee transfer: updates department/manager/location, writes `EmployeeHistory`, and suspends permissions outside the
+Employee transfer updates department/manager/location, writes `EmployeeHistory`, and suspends permissions outside the
   new location subtree for review. Deactivate (Exited/Inactive) blocks new requests, deactivates cards, and revokes
   permissions.
 
 ### 5.5 Identity, profile and photos
 
-* JIT provisioning (`usp_User_ResolveEntra`): if no `Users` row matches the Entra object id or email but an Active
-  `Employees` row has `WorkEmail = email`, create the user (`IsActive=1`), set `Employees.UserId`, grant `Employee`
-  (+ `Manager` when the employee has Active direct reports), write `AuditLogs` (`User.JitProvision`), then continue.
+* JIT provisioning (`usp_User_ResolveEntra`): match an existing user by Entra object ID or email. If an active
+  employee matches by work email, link the user; otherwise provision an employee from Entra claims. The linked user
+  receives the required `Employee` role (and `Manager` when the employee has active direct reports), and the
+  provisioning action is audited. Employee onboarding remains outside EIWAMS.
 * New `Employees` columns (guarded, all NULL): `Designation NVARCHAR(100)`, `MobileNumber NVARCHAR(20)`,
   `Address NVARCHAR(400)`, `BloodGroup NVARCHAR(5)` (CHECK in BloodGroups or NULL), `EmergencyContactName NVARCHAR(150)`,
   `EmergencyContactNumber NVARCHAR(20)`. The same five contact columns are added to `CardRequests` as a snapshot.
@@ -531,46 +467,8 @@ currentStage, submittedAtUtc, route }` (`route` = `/cards/requests/{id}` or `/ac
 requestNumber, validFromUtc, validToUtc, status, provisionedByName, provisionedAtUtc, revokedAtUtc, revokeReason,
 controllerSyncStatus`.
 
-### RFID, violations, incidents, blacklist
-| Method | Route | Permission | Body / query -> data |
-|---|---|---|---|
-| POST | `v1/rfid/events` | Rfid.Ingest | `{ readerId, externalEventId, cardUid, eventType: 'Entry'or'Exit', eventAtUtc }` -> `{ accessLogId, processingStatus, decision ('Granted'or'Denied'), denialReason, violationId, isDuplicate }` |
-| GET | `v1/rfid/events` | Rfid.View | `from, to, locationId, readerId, eventType, decision, employeeId` -> `P<AccessLog>` |
-| GET | `v1/violations` | Violations.View | `status, violationType, severity, locationId, from, to` -> `P<Violation>` |
-| POST | `v1/violations/{id}/review` | Violations.Review | `{ status, reviewNotes, createIncident }` -> `Violation` |
-| GET | `v1/incidents` | Incidents.View | `status, severity, assignedToUserId` -> `P<Incident>` |
-| POST | `v1/incidents` | Incidents.Manage | `{ title, description, incidentType, severity, violationId?, locationId?, assignedToUserId? }` -> `Incident` |
-| GET | `v1/incidents/{id}` | Incidents.View | -> `Incident` + `notes: [{ noteId, note, createdByName, createdAtUtc }]` |
-| PATCH | `v1/incidents/{id}` | Incidents.Manage | `{ status?, assignedToUserId?, resolution?, note?, version }` -> `Incident` |
-| GET | `v1/blacklist` | Blacklist.View | `isActive, subjectType` -> `P<BlacklistEntry>` |
-| POST | `v1/blacklist` | Blacklist.Manage | `{ subjectType ('Employee'or'Visitor'or'Card'), subjectId, reason, reviewDate }` -> `BlacklistEntry` |
-| POST | `v1/blacklist/{id}/lift` | Blacklist.Manage | `{ reason }` -> `BlacklistEntry` |
-
-`AccessLog`: `accessLogId, externalEventId, readerId, readerName, maskedCardUid, cardId, employeeId, employeeName,
-locationId, locationName, eventType, decision, denialReason, eventAtUtc, receivedAtUtc, processingStatus`.
-`Violation`: `violationId, accessLogId, employeeId, employeeName, locationId, locationName, violationType, severity, status,
-detectedAtUtc, reviewNotes, reviewedByName, reviewedAtUtc, incidentId`.
-`Incident`: `incidentId, incidentNumber (INC-yyyy-nnnnn), violationId, incidentType, title, description, severity, status,
-locationId, locationName, assignedToUserId, assignedToName, resolution, openedByName, openedAtUtc, closedAtUtc, version`.
-`BlacklistEntry`: `blacklistId, subjectType, subjectId, subjectName, reason, reviewDate, isActive, createdByName,
-createdAtUtc, liftedByName, liftedAtUtc, liftReason`.
-
-### Visitors
-| Method | Route | Permission | Body / query -> data |
-|---|---|---|---|
-| GET | `v1/visitors` | Visitors.View | `search` -> `P<Visitor>` |
-| POST | `v1/visitors` | Visitors.Manage | `{ displayName, organization, contactReference, visitPurpose, sponsorUserId? }` -> `Visitor` |
-| GET | `v1/visitor-passes` | Visitors.View | `status, locationId, from, to, onSite` -> `P<VisitorPass>` |
-| POST | `v1/visitor-passes` | Visitors.Manage | `{ visitorId, locationId, validFromUtc, validToUtc, sponsorUserId? }` -> `VisitorPass` |
-| POST | `v1/visitor-passes/{id}/approve` | Visitors.Approve | `{ comments? }` -> `VisitorPass` |
-| POST | `v1/visitor-passes/{id}/check-in` | Visitors.Manage | `{}` -> `VisitorPass` |
-| POST | `v1/visitor-passes/{id}/check-out` | Visitors.Manage | `{}` -> `VisitorPass` |
-| POST | `v1/visitor-passes/{id}/revoke` | Visitors.Manage | `{ reason }` -> `VisitorPass` |
-
-`Visitor`: `visitorId, displayName, organization, contactReference, visitPurpose, sponsorUserId, sponsorName, isBlacklisted,
-createdAtUtc, passCount`. `VisitorPass`: `visitorPassId, passNumber (VP-yyyy-nnnnn), visitorId, visitorName, organization,
-locationId, locationName, sponsorUserId, sponsorName, validFromUtc, validToUtc, status, approvedByName, approvedAtUtc,
-checkedInAtUtc, checkedOutAtUtc, revokeReason`.
+RFID monitoring, violations, incidents, blacklist management and visitor management are not part of the simplified API
+or UI surface.
 
 ### Home dashboard (v2)
 | Method | Route | Function | Permission | Data |
@@ -603,19 +501,11 @@ requests not in `Closed/Rejected/Cancelled` plus access requests in `Draft, Subm
 Approved`; `closed` counts the rest. `cardsIssuedThisMonth` = card requests moved to `Closed` this UTC month;
 `accessGrantedThisMonth` = permissions provisioned this UTC month; `openRequests` = open card + access requests in scope.
 
-### Dashboard analytics, reports, audit, notifications (existing)
+### Activity and notifications
 | Method | Route | Permission | Data |
 |---|---|---|---|
-| GET | `v1/dashboard/summary` | Dashboard.View | `{ activeEmployees, activeCards, blockedCards, pendingAccessRequests, myPendingApprovals, activePermissions, permissionsExpiring7d, eventsToday, deniedToday, openViolations, openIncidents, visitorsOnSite, avgApprovalTurnaroundHours }` (scoped) |
-| GET | `v1/dashboard/events-trend?days=14` | Dashboard.View | `[{ date, entries, exits, denied }]` |
-| GET | `v1/dashboard/requests-by-status` | Dashboard.View | `[{ label, count }]` |
-| GET | `v1/dashboard/violations-by-type` | Dashboard.View | `[{ label, count }]` |
-| GET | `v1/dashboard/cards-by-status` | Dashboard.View | `[{ label, count }]` |
-| GET | `v1/dashboard/occupancy` | Dashboard.View | `[{ locationId, locationName, onSite }]` (entries minus exits today; estimate) |
 | GET | `v1/dashboard/my-work` | Dashboard.View | `[{ itemType, referenceId, referenceNumber, title, status, createdAtUtc, route }]` |
 | GET | `v1/dashboard/activity?top=15` | Dashboard.View | `[{ auditLogId, action, entityType, entityId, actorName, summary, occurredAtUtc }]` |
-| GET | `v1/reports/{reportName}` | Reports.View | `reportName` in `employee-register, card-lifecycle, access-permissions, access-activity, request-aging, violations-incidents, audit-compliance`; query `from, to, locationId, departmentId, status, page, pageSize` -> `P<object>` with camelCase columns |
-| GET | `v1/reports/{reportName}/export` | Reports.Export | same filters -> `text/csv` attachment |
 | GET | `v1/audit-logs` | Audit.View | `from, to, actorUserId, action, entityType, entityId, search` -> `P<AuditLog>` |
 | GET | `v1/audit-logs/timeline?entityType=&entityId=` | authenticated + entity read access | -> `AuditLog[]` |
 | GET | `v1/notifications` | authenticated | `unreadOnly` -> `P<Notification>` |
@@ -630,31 +520,25 @@ relatedEntityId, route, createdAtUtc, readAtUtc`.
 ### Administration
 | Method | Route | Permission | Body -> data |
 |---|---|---|---|
-| GET/POST | `v1/admin/users` | Users.Manage | `search, isActive` -> `P<AdminUser>` / `{ displayName, email, entraObjectId?, isActive, allFacilities, roleIds, facilityIds, employeeId? }` |
-| PUT | `v1/admin/users/{id}` | Users.Manage | same as POST -> `AdminUser` |
-| GET | `v1/admin/roles` | Roles.Manage | -> `[{ roleId, roleName, description, isSystem, userCount, permissionCount }]` |
-| GET/PUT | `v1/admin/roles/{id}/permissions` | Roles.Manage | -> `[{ permissionId, code, module, description, granted }]` / `{ permissionIds }` |
-| GET | `v1/admin/permissions` | Roles.Manage | -> `[{ permissionId, code, module, description }]` |
+| GET | `v1/admin/users` | Users.Manage | `search, isActive, page, pageSize` -> `P<AdminUser>`; rows are employee-backed and may have `userId: null` before first sign-in |
+| PUT | `v1/admin/employees/{employeeId}` | Users.Manage | `{ roles: string[], managerEmployeeId?, departmentId?, designation?, locationId?, isActive }` -> `AdminUser`; `Employee` is always retained and an account is linked or created by work email |
 | GET/POST | `v1/departments` | Employees.View / Reference.Manage | -> `Department[]` / `{ departmentCode, departmentName, headUserId?, isActive }` |
 | PUT | `v1/departments/{id}` | Reference.Manage | same -> `Department` |
 | GET/POST | `v1/locations` | authenticated / Reference.Manage | -> `Location[]` / `{ parentLocationId?, locationCode, locationName, locationType, isRestricted, isActive, timeZone }` |
 | PUT | `v1/locations/{id}` | Reference.Manage | same -> `Location` |
-| GET/POST | `v1/readers` | Rfid.View / Reference.Manage | -> `Reader[]` / `{ readerId, readerName, locationId, direction ('In'or'Out'or'Both'), isActive }` |
-| PUT | `v1/readers/{readerId}` | Reference.Manage | same -> `Reader` |
-| GET/PUT | `v1/admin/settings` | Settings.Manage | -> `[{ settingKey, settingValue, description, dataType }]` / `{ settingKey, settingValue }` |
 
-`AdminUser`: `userId, displayName, email, entraObjectId, isActive, allFacilities, roleIds, roleNames, facilityIds,
-facilityNames, employeeId, employeeNumber, lastLoginAtUtc`. `Department`: `departmentId, departmentCode, departmentName,
+`AdminUser`: `userId?`, `employeeId`, `employeeNumber`, `displayName`, `email`, `roles`, `isActive`, `lastLoginAtUtc`,
+`departmentId`, `departmentName`, `managerEmployeeId`, `managerName`, `designation`, `locationId`, `locationName`.
+Facility scope is preserved by the API when role assignments are saved. `Department`: `departmentId, departmentCode, departmentName,
 headUserId, headUserName, isActive, employeeCount`. `Location`: `locationId, parentLocationId, parentLocationName,
-locationCode, locationName, locationType, isRestricted, isActive, timeZone, path, readerCount`. `Reader`: `readerId,
-readerName, locationId, locationName, direction, isActive, lastSeenAtUtc`.
+locationCode, locationName, locationType, isRestricted, isActive, timeZone, path`.
 
 ## 7. UI and theme
 
-* **Top navigation only** (no side nav). A sticky app bar with the logo, menu sections from `v1/me/menu` (single entry =
-  link, several = `mat-menu` dropdown), a notification bell with unread badge, and a user menu (avatar from
-  `v1/me/photo` when `hasPhoto`, My Profile, roles, sign out). Below `lg` the sections collapse into a hamburger panel
-  that drops down from the top, not a side drawer.
+* **Top navigation only** (no side nav). Home; Requests (raise ID card, raise access, My requests); permission-driven
+  Approvals hub; ID Card Processing; Access Provisioning; Employees; and Admin (Employees & roles, Locations,
+  Departments). Notifications and the employee profile/sign-out menu are on the right. Navigation is computed by the
+  SPA from permissions and roles; `v1/me/menu` is not used by the simplified UI.
 * Scientific palette ("Lab Spectrum"): primary deep ocean `#0B3C5D`, secondary teal `#0FA3B1`, accent cyan `#3DDCF2`,
   violet highlight `#5B5BD6`, success `#1B998B`, warning `#F2A541`, danger `#D7263D`, surface `#F4F8FB`, ink `#10212E`.
   App bar gradient `linear-gradient(90deg,#0B3C5D,#0E6E83 60%,#0FA3B1)`. Font: Inter / Roboto. Tabular data uses
@@ -665,29 +549,23 @@ readerName, locationId, locationName, direction, isActive, lastSeenAtUtc`.
   responsive with no horizontal overflow; 0 console errors.
 * Every screen handles loading, empty, error (with correlationId), validation, and success states.
 
-### Pages and routes (v2)
+### Pages and routes
 
-| Route | Page | Guard (any) | Data |
-|---|---|---|---|
-| `/dashboard` | Home: role-based section cards (My Requests, Pending Manager Approvals, HR Verification, ID Card Processing, Security Approvals, Access Review, Provisioning, Team Requests, Reports) rendered only when the `HomeDashboardDto` section is non-null, plus quick actions "Raise ID Card Request" / "Raise Access Request". Existing analytics charts stay below for `Reports.View`. | Dashboard.View | `v1/dashboard/home` (+ existing analytics endpoints) |
-| `/profile` | My Profile: HR fields read-only, editable contact details, photo upload/preview (client resize to <= 600x600 JPEG), active card (masked UID) | Dashboard.View | `v1/me/profile`, `PUT v1/me/profile`, `v1/me/photo`, `PUT v1/me/photo` |
-| `/cards/requests/new` | Raise ID Card Request stepper: 1 Type & reason (New/Lost/Damaged; Damaged = reason select, Lost = free text) -> 2 Details (pre-filled from profile, editable) -> 3 Photo (file input, no camera; square crop + resize; preview; required for New without existing photo) -> 4 Review & submit | Cards.Request | `v1/me/profile`, `v1/me/photo`, `v1/lookups`, `POST v1/card-requests` |
-| `/access-requests/new` | Raise Access Request: Building / Wing-Floor toggle, building select (locations of type Building), dependent wing/floor select (descendants of type Floor/Wing/Zone), duration preset (+ dates for Custom), justification, review & submit (`submit: true`) | AccessRequests.Create | `v1/lookups`, `POST v1/access-requests` |
-| `/my-requests` | My Requests with tabs `?tab=cards` (default) / `?tab=access`, status chips, link to detail | Cards.View | `v1/card-requests?mine=true`, `v1/access-requests?mine=true` |
-| `/cards/requests/:id` | Card request detail: horizontal stepper (§5.1), details + photo, history timeline, action panel driven by `availableActions` (comments dialog; comments required for Reject) | Cards.View, Cards.ViewAll, Cards.ManagerApprove, Cards.HrVerify, Cards.SecurityReview, Cards.Process, Approvals.Team | `v1/card-requests/{id}`, `v1/employees/{employeeId}/photo` (reviewers) or `v1/me/photo` (own) |
-| `/access-requests/:id` | Access request detail: stepper of `approvals[]` stages, timeline, actions from `canDecide/canProvision/canCancel/canSubmit` | AccessRequests.View, Approvals.Decide, Approvals.Team | `v1/access-requests/{id}` |
-| `/approvals/manager` | Pending Approvals: card requests (stage Manager) and access approvals (stage Manager) in two tabs; quick Approve/Reject | Cards.ManagerApprove | `v1/card-requests/queue?stage=Manager`, `v1/approvals/pending?stage=Manager` |
-| `/approvals/team` | Team Requests | Approvals.Team | `v1/approvals/team` |
-| `/approvals/hr` | HR Verification Queue | Cards.HrVerify | `v1/card-requests/queue?stage=HR` |
-| `/approvals/id-card` | ID Card Processing Queue (Approve / Mark printed / Issue) | Cards.Process | `v1/card-requests/queue?stage=IdCardTeam` |
-| `/approvals/security` | Security Approvals (lost-card review) | Cards.SecurityReview | `v1/card-requests/queue?stage=Security` |
-| `/approvals/access` | Access Requests Review (SecurityHead/Security/AccessControl stages; `provisionNow` checkbox at AccessControl for `Permissions.Provision` holders) | Approvals.Decide | `v1/approvals/pending` |
-| `/permissions/provision` | Access Provisioning | Permissions.Provision | `v1/access-requests?status=Approved`, `POST v1/permissions/provision` |
-| `/notifications` | Notifications | Dashboard.View | `v1/notifications` |
-| `/employees`, `/employees/:id` | Read-only employee directory (search, view, photo for permitted roles) | Employees.View, Employees.ViewAll | `v1/employees` |
-| `/cards`, `/permissions` | Directory lists (existing) | Cards.ViewAll / Permissions.View | existing |
-| `/rfid-monitor`, `/violations`, `/incidents`, `/blacklist`, `/visitors`, `/reports`, `/audit`, `/admin/...` | unchanged | unchanged | unchanged |
+| Route | Page | Data |
+|---|---|---|
+| `/dashboard` | Home: employee summary, Request ID card / Request access actions, recent requests and role-specific pending queues | `v1/dashboard/home` |
+| `/cards/requests/new` | Raise an ID card request | `v1/me/profile`, `v1/me/photo`, `v1/lookups`, `POST v1/card-requests` |
+| `/access-requests/new` | Raise building or wing/floor access request | `v1/lookups`, `POST v1/access-requests` |
+| `/my-requests` | Employee's ID card and access requests | `v1/card-requests`, `v1/access-requests` |
+| `/cards/requests/:id`, `/access-requests/:id` | Request detail, stage progress and available actions | Request detail endpoints |
+| `/approvals` | Permission-driven approval tabs in one hub | `v1/card-requests/queue`, `v1/approvals/pending`, `v1/approvals/team` |
+| `/id-card-processing` | ID card processing queue | `v1/card-requests/queue?stage=IdCardTeam` |
+| `/permissions/provision` | Access provisioning queue | `v1/access-requests`, `POST v1/permissions/provision` |
+| `/employees` | Read-only employee directory | `v1/employees` |
+| `/admin/employees` | Employees & roles; organization data and role assignment | `GET v1/admin/users`, `PUT v1/admin/employees/{employeeId}` |
+| `/admin/locations`, `/admin/departments` | Location hierarchy and departments | `v1/locations`, `v1/departments` |
+| `/profile`, `/notifications` | Employee profile and notifications | `v1/me/profile`, `v1/me/photo`, `v1/notifications` |
 
-**Removed:** employee create/edit UI (`/employees/new`, `/employees/:id/edit`, Create/Edit buttons). Redirects:
-`/approvals` -> `/approvals/access`, `/access-requests` -> `/my-requests?tab=access`.
-Quick approve/reject from a queue row uses the row's `version`; any other action opens the detail page.
+Removed from the application UI: RFID monitoring, violations, incidents, blacklist, visitors, reports, audit screens,
+card inventory, role editor, readers and settings. Employee creation remains in HRMS/Entra; the employee directory is
+read-only in EIWAMS.

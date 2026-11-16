@@ -93,6 +93,10 @@ CREATE OR ALTER FUNCTION dbo.fn_UserCanAccessLocation (@UserId INT, @LocationId 
 RETURNS BIT
 AS
 BEGIN
+    -- Employees without a location yet (auto-provisioned on first sign-in) are reachable by every active user;
+    -- permission checks still gate what the user may do with them.
+    IF @LocationId IS NULL
+        RETURN CASE WHEN EXISTS (SELECT 1 FROM dbo.Users u WHERE u.UserId = @UserId AND u.IsActive = 1) THEN 1 ELSE 0 END;
     RETURN CASE WHEN EXISTS (SELECT 1 FROM dbo.fn_UserLocationScope(@UserId) s WHERE s.LocationId = @LocationId) THEN 1 ELSE 0 END;
 END
 GO
@@ -116,8 +120,8 @@ RETURN
     SELECT e.EmployeeId FROM dbo.Employees e JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId WHERE m.UserId = @UserId
     UNION
     SELECT e.EmployeeId FROM dbo.Employees e
-    JOIN dbo.fn_UserLocationScope(@UserId) s ON s.LocationId = e.LocationId
-    WHERE dbo.fn_HasPermission(@UserId, N'Employees.ViewAll') = 1;
+    WHERE dbo.fn_HasPermission(@UserId, N'Employees.ViewAll') = 1
+      AND (e.LocationId IS NULL OR e.LocationId IN (SELECT LocationId FROM dbo.fn_UserLocationScope(@UserId)));
 GO
 
 -- Employees the user may act on operationally (cards, permissions, RFID, security): visible plus in-scope for operational roles.
@@ -128,10 +132,10 @@ RETURN
     SELECT v.EmployeeId FROM dbo.fn_VisibleEmployees(@UserId) v
     UNION
     SELECT e.EmployeeId FROM dbo.Employees e
-    JOIN dbo.fn_UserLocationScope(@UserId) s ON s.LocationId = e.LocationId
-    WHERE EXISTS (SELECT 1 FROM dbo.fn_UserPermissions(@UserId) p
+    WHERE (e.LocationId IS NULL OR e.LocationId IN (SELECT LocationId FROM dbo.fn_UserLocationScope(@UserId)))
+      AND EXISTS (SELECT 1 FROM dbo.fn_UserPermissions(@UserId) p
                   WHERE p.PermissionCode IN (N'Cards.ViewAll', N'AccessRequests.ViewAll', N'Permissions.Provision', N'Permissions.Revoke',
-                                             N'Rfid.View', N'Violations.View', N'Blacklist.Manage', N'Approvals.Decide', N'Cards.Issue'));
+                                             N'Approvals.Decide', N'Cards.Issue'));
 GO
 
 CREATE OR ALTER FUNCTION dbo.fn_VisibleAccessRequests (@UserId INT)
@@ -207,8 +211,8 @@ SELECT e.EmployeeId, e.EmployeeNumber, e.FirstName, e.LastName, CONCAT(e.FirstNa
             AND ar.Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved')) AS OpenAccessRequestCount,
        e.CreatedAtUtc, e.UpdatedAtUtc, e.Version
 FROM dbo.Employees e
-JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
-JOIN dbo.Locations l ON l.LocationId = e.LocationId
+LEFT JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+LEFT JOIN dbo.Locations l ON l.LocationId = e.LocationId
 LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId;
 GO
 
@@ -241,8 +245,8 @@ SELECT cr.CardRequestId, cr.RequestNumber, cr.RequestType, cr.EmployeeId, CONCAT
        cr.DecidedAtUtc, cr.DecisionComments, cr.RequestedValidToUtc, cr.Version
 FROM dbo.CardRequests cr
 JOIN dbo.Employees e ON e.EmployeeId = cr.EmployeeId
-JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
-JOIN dbo.Locations l ON l.LocationId = e.LocationId
+LEFT JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+LEFT JOIN dbo.Locations l ON l.LocationId = e.LocationId
 JOIN dbo.Users rq ON rq.UserId = cr.RequestedByUserId
 LEFT JOIN dbo.Users vb ON vb.UserId = cr.VerifiedByUserId
 LEFT JOIN dbo.Users ab ON ab.UserId = cr.ApprovedByUserId

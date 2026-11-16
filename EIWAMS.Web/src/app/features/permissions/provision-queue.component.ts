@@ -10,6 +10,7 @@ import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { RouterLink } from '@angular/router';
 
+import { WorkCountsService } from '../../core/services/work-counts.service';
 import { AccessRequest, accessTypeLabel, durationLabel } from '../access-requests/access-requests.models';
 import { AccessRequestsService } from '../access-requests/access-requests.service';
 import { Notifier, PagedList } from '../approvals/kit/feature-kit';
@@ -28,11 +29,10 @@ import { PermissionsService } from './permissions.service';
     <section class="page">
       <header class="page-header">
         <div>
-          <h1>Provision access</h1>
-          <p class="subtitle">Fully approved access requests. Provisioning creates the access permission on the controller.</p>
+          <h1>Access provisioning</h1>
+          <p class="subtitle">Approved access requests waiting for access to be granted.</p>
         </div>
         <div class="page-actions">
-          <a mat-button routerLink="/permissions"><mat-icon>key</mat-icon>All permissions</a>
           <button mat-stroked-button type="button" (click)="list.load()"><mat-icon>refresh</mat-icon>Refresh</button>
         </div>
       </header>
@@ -107,6 +107,7 @@ export class ProvisionQueueComponent {
   private readonly requests = inject(AccessRequestsService);
   private readonly permissions = inject(PermissionsService);
   private readonly notifier = inject(Notifier);
+  private readonly work = inject(WorkCountsService);
   readonly accessTypeLabel = accessTypeLabel;
   readonly durationLabel = durationLabel;
   readonly search = new FormControl<string | null>(null);
@@ -124,6 +125,7 @@ export class ProvisionQueueComponent {
       next: () => {
         this.busyId.set(null);
         this.notifier.success(`Access provisioned for ${r.requestNumber}.`);
+        this.work.refresh();
         this.list.load();
       },
       error: (err: unknown) => {

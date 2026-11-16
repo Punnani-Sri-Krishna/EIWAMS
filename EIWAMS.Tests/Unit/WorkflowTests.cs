@@ -15,13 +15,13 @@ public class WorkflowTests
         => Assert.Equal(allowed, AccessRequestWorkflow.CanTransition(from, to));
 
     [Fact]
-    public void StagesAdvanceManagerSecurityFacilityAdminThenApproved()
+    public void StagesAdvanceManagerSecurityAccessControlThenApproved()
     {
         Assert.Equal("Security", AccessRequestWorkflow.NextStage("Manager"));
-        Assert.Equal("FacilityAdmin", AccessRequestWorkflow.NextStage("Security"));
-        Assert.Null(AccessRequestWorkflow.NextStage("FacilityAdmin"));
+        Assert.Equal("AccessControl", AccessRequestWorkflow.NextStage("Security"));
+        Assert.Null(AccessRequestWorkflow.NextStage("AccessControl"));
         Assert.Equal("PendingApproval", AccessRequestWorkflow.StatusAfterDecision("Manager", "Approve"));
-        Assert.Equal("Approved", AccessRequestWorkflow.StatusAfterDecision("FacilityAdmin", "Approve"));
+        Assert.Equal("Approved", AccessRequestWorkflow.StatusAfterDecision("AccessControl", "Approve"));
         Assert.Equal("Rejected", AccessRequestWorkflow.StatusAfterDecision("Security", "Reject"));
         Assert.Equal("Returned", AccessRequestWorkflow.StatusAfterDecision("Manager", "Return"));
     }
@@ -35,14 +35,4 @@ public class WorkflowTests
         Assert.True(AccessRequestWorkflow.IsTerminal("Rejected"));
         Assert.False(AccessRequestWorkflow.IsTerminal("Approved"));
     }
-
-    [Theory]
-    [InlineData("Approve", "PendingApproval", true)]
-    [InlineData("CheckIn", "Approved", true)]
-    [InlineData("CheckOut", "Active", true)]
-    [InlineData("CheckIn", "PendingApproval", false)]
-    [InlineData("CheckOut", "Approved", false)]
-    [InlineData("Revoke", "CheckedOut", false)]
-    public void VisitorPassActions(string action, string status, bool allowed)
-        => Assert.Equal(allowed, VisitorPassWorkflow.IsAllowed(action, status));
 }

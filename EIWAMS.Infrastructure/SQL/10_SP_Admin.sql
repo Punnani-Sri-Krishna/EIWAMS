@@ -91,7 +91,11 @@ BEGIN
         IF @UserId = @ActorUserId AND dbo.fn_UserHasRole(@ActorUserId, N'SystemAdmin') = 1
            AND NOT EXISTS (SELECT 1 FROM @Roles x JOIN dbo.Roles r ON r.RoleId = x.RoleId WHERE r.RoleName = N'SystemAdmin')
             THROW 50422, N'You cannot remove your own SystemAdmin role.', 1;
-        IF @EmployeeId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeId = @EmployeeId) THROW 50400, N'The employee does not exist.', 1;
+        -- Wave 3: every user is an employee. Users are created at sign-in (or from Employees & roles), never here.
+        IF @UserId IS NULL THROW 50422, N'Users cannot be created without an employee. Users are created automatically at first sign-in; manage them in Employees & roles.', 1;
+        IF @EmployeeId IS NULL SELECT @EmployeeId = EmployeeId FROM dbo.Employees WHERE UserId = @UserId;
+        IF @EmployeeId IS NULL THROW 50422, N'The user has no linked employee and cannot be saved.', 1;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeId = @EmployeeId) THROW 50400, N'The employee does not exist.', 1;
 
         BEGIN TRAN;
         IF EXISTS (SELECT 1 FROM dbo.Users WITH (UPDLOCK, HOLDLOCK) WHERE Email = @Email AND UserId <> ISNULL(@UserId, -1))
@@ -145,13 +149,167 @@ BEGIN
 END
 GO
 
+/*------------------------- Employees & roles ------------------------*/
+-- Display label of a role (wave 3 simplified roles).
+CREATE OR ALTER FUNCTION dbo.fn_RoleLabel (@RoleName NVARCHAR(50))
+RETURNS NVARCHAR(100)
+AS
+BEGIN
+    RETURN CASE @RoleName
+        WHEN N'HRAdmin' THEN N'HR'
+        WHEN N'SecurityHead' THEN N'Security Head'
+        WHEN N'SecurityTeam' THEN N'Security'
+        WHEN N'IdCardTeam' THEN N'ID Card Team'
+        WHEN N'AccessControlTeam' THEN N'Access Control'
+        WHEN N'SystemAdmin' THEN N'System Admin'
+        ELSE @RoleName END;
+END
+GO
+
+-- One row per employee with its sign-in account (if any), roles and facility scope.
+CREATE OR ALTER VIEW dbo.vw_AdminEmployees
+AS
+SELECT e.EmployeeId, e.EmployeeNumber, CONCAT(e.FirstName, CASE WHEN e.LastName = N'' THEN N'' ELSE N' ' END, e.LastName) AS FullName,
+       e.WorkEmail, e.Designation, e.DepartmentId, d.DepartmentName, e.ManagerEmployeeId,
+       CONCAT(m.FirstName, CASE WHEN ISNULL(m.LastName, N'') = N'' THEN N'' ELSE N' ' END, m.LastName) AS ManagerName,
+       e.LocationId, l.LocationName, e.EmploymentStatus,
+       u.UserId, ISNULL(u.IsActive, CAST(0 AS BIT)) AS IsActive, ISNULL(u.AllFacilities, CAST(0 AS BIT)) AS AllFacilities,
+       a.RoleIds, a.RoleNames, a.FacilityIds, a.FacilityNames, u.LastLoginAtUtc
+FROM dbo.Employees e
+LEFT JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+LEFT JOIN dbo.Locations l ON l.LocationId = e.LocationId
+LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId
+LEFT JOIN dbo.Users u ON u.UserId = e.UserId
+LEFT JOIN dbo.vw_AdminUsers a ON a.UserId = e.UserId;
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_AdminEmployee_Search
+    @ActorUserId INT,
+    @Search      NVARCHAR(200) = NULL,
+    @IsActive    BIT = NULL,
+    @Page        INT = 1,
+    @PageSize    INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET @Search = NULLIF(LTRIM(RTRIM(@Search)), N'');
+    IF @Page < 1 SET @Page = 1;
+    IF @PageSize < 1 SET @PageSize = 20;
+    IF @PageSize > 100 SET @PageSize = 100;
+
+    SELECT COUNT(*) AS TotalCount FROM dbo.vw_AdminEmployees x
+    WHERE (@IsActive IS NULL OR x.IsActive = @IsActive)
+      AND (@Search IS NULL OR x.FullName LIKE N'%' + @Search + N'%' OR x.WorkEmail LIKE N'%' + @Search + N'%' OR x.EmployeeNumber LIKE N'%' + @Search + N'%');
+
+    SELECT x.EmployeeId, x.EmployeeNumber, x.FullName, x.WorkEmail, x.Designation, x.DepartmentId, x.DepartmentName, x.ManagerEmployeeId,
+           NULLIF(x.ManagerName, N'') AS ManagerName, x.LocationId, x.LocationName, x.EmploymentStatus, x.UserId, x.IsActive, x.AllFacilities,
+           x.RoleIds, x.RoleNames, x.FacilityIds, x.FacilityNames, x.LastLoginAtUtc
+    FROM dbo.vw_AdminEmployees x
+    WHERE (@IsActive IS NULL OR x.IsActive = @IsActive)
+      AND (@Search IS NULL OR x.FullName LIKE N'%' + @Search + N'%' OR x.WorkEmail LIKE N'%' + @Search + N'%' OR x.EmployeeNumber LIKE N'%' + @Search + N'%')
+    ORDER BY x.FullName, x.EmployeeId
+    OFFSET (@Page - 1) * @PageSize ROWS FETCH NEXT @PageSize ROWS ONLY;
+END
+GO
+
+-- Edits an employee's organisation data and its account (roles, active flag, facility scope). Creates the account
+-- (linked at first sign-in by email) when the employee has none. The Employee role is always kept.
+-- @RoleIds and @FacilityIds are JSON arrays of integers.
+CREATE OR ALTER PROCEDURE dbo.usp_AdminEmployee_Save
+    @ActorUserId       INT,
+    @EmployeeId        INT,
+    @RoleIds           NVARCHAR(MAX) = N'[]',
+    @ManagerEmployeeId INT = NULL,
+    @DepartmentId      INT = NULL,
+    @LocationId        INT = NULL,
+    @Designation       NVARCHAR(100) = NULL,
+    @IsActive          BIT = 1,
+    @AllFacilities     BIT = 0,
+    @FacilityIds       NVARCHAR(MAX) = N'[]',
+    @CorrelationId     UNIQUEIDENTIFIER = NULL,
+    @IpAddress         VARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        SET @Designation = NULLIF(LTRIM(RTRIM(@Designation)), N'');
+        IF ISJSON(ISNULL(@RoleIds, N'[]')) = 0 OR ISJSON(ISNULL(@FacilityIds, N'[]')) = 0 THROW 50400, N'roleIds and facilityIds must be arrays.', 1;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeId = @EmployeeId) THROW 50404, N'Employee not found.', 1;
+
+        DECLARE @Roles TABLE (RoleId INT PRIMARY KEY);
+        INSERT @Roles SELECT DISTINCT TRY_CAST(value AS INT) FROM OPENJSON(ISNULL(@RoleIds, N'[]')) WHERE TRY_CAST(value AS INT) IS NOT NULL;
+        DECLARE @Facilities TABLE (LocationId INT PRIMARY KEY);
+        INSERT @Facilities SELECT DISTINCT TRY_CAST(value AS INT) FROM OPENJSON(ISNULL(@FacilityIds, N'[]')) WHERE TRY_CAST(value AS INT) IS NOT NULL;
+        IF EXISTS (SELECT 1 FROM @Roles x WHERE NOT EXISTS (SELECT 1 FROM dbo.Roles r WHERE r.RoleId = x.RoleId)) THROW 50400, N'One or more roles do not exist.', 1;
+        IF EXISTS (SELECT 1 FROM @Facilities x WHERE NOT EXISTS (SELECT 1 FROM dbo.Locations l WHERE l.LocationId = x.LocationId))
+            THROW 50400, N'One or more facilities do not exist.', 1;
+        INSERT @Roles SELECT r.RoleId FROM dbo.Roles r WHERE r.RoleName = N'Employee' AND NOT EXISTS (SELECT 1 FROM @Roles x WHERE x.RoleId = r.RoleId);
+
+        DECLARE @UserId INT, @Email NVARCHAR(256), @Name NVARCHAR(150), @Status NVARCHAR(20);
+        SELECT @UserId = e.UserId, @Email = LOWER(LTRIM(RTRIM(e.WorkEmail))),
+               @Name = CONCAT(e.FirstName, CASE WHEN e.LastName = N'' THEN N'' ELSE N' ' END, e.LastName), @Status = e.EmploymentStatus
+        FROM dbo.Employees e WHERE e.EmployeeId = @EmployeeId;
+        IF @UserId = @ActorUserId AND @IsActive = 0 THROW 50422, N'You cannot deactivate your own account.', 1;
+        IF @UserId = @ActorUserId AND dbo.fn_UserHasRole(@ActorUserId, N'SystemAdmin') = 1
+           AND NOT EXISTS (SELECT 1 FROM @Roles x JOIN dbo.Roles r ON r.RoleId = x.RoleId WHERE r.RoleName = N'SystemAdmin')
+            THROW 50422, N'You cannot remove your own SystemAdmin role.', 1;
+        EXEC dbo.usp_Internal_ValidateEmployeeRefs @ActorUserId, @EmployeeId, @DepartmentId, @ManagerEmployeeId, @LocationId;
+
+        BEGIN TRAN;
+        DECLARE @Before NVARCHAR(MAX) = (SELECT EmployeeNumber, FullName, Designation, DepartmentName, ManagerName, LocationName, IsActive, AllFacilities, RoleNames, FacilityNames
+                                         FROM dbo.vw_AdminEmployees WHERE EmployeeId = @EmployeeId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+
+        UPDATE dbo.Employees SET ManagerEmployeeId = @ManagerEmployeeId, DepartmentId = @DepartmentId, LocationId = @LocationId,
+               Designation = @Designation, UpdatedAtUtc = SYSUTCDATETIME(), UpdatedByUserId = @ActorUserId
+        WHERE EmployeeId = @EmployeeId;
+
+        IF @UserId IS NULL
+        BEGIN
+            IF @Email IS NULL OR @Email = N'' THROW 50422, N'The employee has no work email, so no account can be created.', 1;
+            SELECT @UserId = UserId FROM dbo.Users WITH (UPDLOCK, HOLDLOCK) WHERE Email = @Email;
+            IF @UserId IS NOT NULL AND EXISTS (SELECT 1 FROM dbo.Employees WHERE UserId = @UserId)
+                THROW 50409, N'Another employee is already linked to the account with this email.', 1;
+            IF @UserId IS NULL
+            BEGIN
+                INSERT dbo.Users (DisplayName, Email, IsActive, AllFacilities) VALUES (@Name, @Email, @IsActive, @AllFacilities);
+                SET @UserId = SCOPE_IDENTITY();
+            END
+            UPDATE dbo.Employees SET UserId = @UserId WHERE EmployeeId = @EmployeeId;
+        END
+
+        UPDATE dbo.Users SET IsActive = @IsActive, AllFacilities = @AllFacilities, UpdatedAtUtc = SYSUTCDATETIME() WHERE UserId = @UserId;
+        DELETE dbo.UserRoles WHERE UserId = @UserId AND RoleId NOT IN (SELECT RoleId FROM @Roles);
+        INSERT dbo.UserRoles (UserId, RoleId) SELECT @UserId, x.RoleId FROM @Roles x WHERE NOT EXISTS (SELECT 1 FROM dbo.UserRoles ur WHERE ur.UserId = @UserId AND ur.RoleId = x.RoleId);
+        DELETE dbo.UserFacilityScopes WHERE UserId = @UserId AND LocationId NOT IN (SELECT LocationId FROM @Facilities);
+        INSERT dbo.UserFacilityScopes (UserId, LocationId) SELECT @UserId, x.LocationId FROM @Facilities x
+        WHERE NOT EXISTS (SELECT 1 FROM dbo.UserFacilityScopes s WHERE s.UserId = @UserId AND s.LocationId = x.LocationId);
+
+        DECLARE @After NVARCHAR(MAX) = (SELECT EmployeeNumber, FullName, Designation, DepartmentName, ManagerName, LocationName, IsActive, AllFacilities, RoleNames, FacilityNames
+                                        FROM dbo.vw_AdminEmployees WHERE EmployeeId = @EmployeeId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+        DECLARE @Summary NVARCHAR(500) = CONCAT(N'Employee ', @Name, N' roles and organisation updated.');
+        EXEC dbo.usp_Audit_Write @ActorUserId, N'Employee.RolesUpdated', N'Employee', @EmployeeId, @Summary, @Before, @After, NULL, @CorrelationId, @IpAddress;
+        COMMIT;
+
+        SELECT x.EmployeeId, x.EmployeeNumber, x.FullName, x.WorkEmail, x.Designation, x.DepartmentId, x.DepartmentName, x.ManagerEmployeeId,
+               NULLIF(x.ManagerName, N'') AS ManagerName, x.LocationId, x.LocationName, x.EmploymentStatus, x.UserId, x.IsActive, x.AllFacilities,
+               x.RoleIds, x.RoleNames, x.FacilityIds, x.FacilityNames, x.LastLoginAtUtc
+        FROM dbo.vw_AdminEmployees x WHERE x.EmployeeId = @EmployeeId;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END
+GO
+
 /*------------------------- Roles and permissions --------------------*/
 CREATE OR ALTER PROCEDURE dbo.usp_Role_List
     @ActorUserId INT
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT r.RoleId, r.RoleName, r.Description, r.IsSystem,
+    SELECT r.RoleId, r.RoleName, dbo.fn_RoleLabel(r.RoleName) AS Label, r.Description, r.IsSystem,
            (SELECT COUNT(*) FROM dbo.UserRoles ur JOIN dbo.Users u ON u.UserId = ur.UserId WHERE ur.RoleId = r.RoleId AND u.IsActive = 1) AS UserCount,
            (SELECT COUNT(*) FROM dbo.RolePermissions rp WHERE rp.RoleId = r.RoleId) AS PermissionCount
     FROM dbo.Roles r ORDER BY r.RoleId;
@@ -487,4 +645,8 @@ BEGIN
         THROW;
     END CATCH
 END
+GO
+
+/*------------------- Wave 3 backfill: every user is an employee ----*/
+EXEC dbo.usp_Internal_BackfillUserEmployees;
 GO

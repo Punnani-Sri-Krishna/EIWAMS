@@ -1,42 +1,30 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
-import { MatTabsModule } from '@angular/material/tabs';
 
 import { SessionService } from '../../core/services/session.service';
 import { CardQueueComponent } from '../card-requests/card-queue.component';
 import { ApprovalQueueComponent } from './approval-queue.component';
 
-/** Pending Approvals (manager): card requests and access approvals at stage Manager. */
+/** "Manager approvals" tab: team card requests and access requests at stage Manager. */
 @Component({
   selector: 'eiw-manager-approvals',
-  imports: [MatTabsModule, MatIconModule, CardQueueComponent, ApprovalQueueComponent],
+  imports: [MatIconModule, CardQueueComponent, ApprovalQueueComponent],
   changeDetection: ChangeDetectionStrategy.OnPush,
-  styles: `.tab-body { padding-top: 16px; } .tab-label { display: inline-flex; align-items: center; gap: 6px; }`,
+  styles: `
+    .queue-title { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; font-size: 1.05rem; font-weight: 600; }
+    .queue + .queue { margin-top: 28px; }
+  `,
   template: `
-    <section class="page">
-      <header class="page-header">
-        <div>
-          <h1>Pending approvals</h1>
-          <p class="subtitle">Requests from your team waiting for a manager decision. Rejecting requires a comment.</p>
-        </div>
-      </header>
-      <mat-tab-group mat-stretch-tabs="false" mat-align-tabs="start" animationDuration="0ms" aria-label="Approval type">
-        <mat-tab>
-          <ng-template mat-tab-label><span class="tab-label"><mat-icon>badge</mat-icon>ID card requests</span></ng-template>
-          <div class="tab-body">
-            <eiw-card-queue stage="Manager" [embedded]="true" emptyText="No ID card requests are waiting for your approval." />
-          </div>
-        </mat-tab>
-        @if (canDecideAccess) {
-          <mat-tab>
-            <ng-template mat-tab-label><span class="tab-label"><mat-icon>vpn_key</mat-icon>Access requests</span></ng-template>
-            <ng-template matTabContent>
-              <div class="tab-body"><eiw-approval-queue stage="Manager" [embedded]="true" /></div>
-            </ng-template>
-          </mat-tab>
-        }
-      </mat-tab-group>
+    <section class="queue" aria-labelledby="mgr-cards">
+      <h2 class="queue-title" id="mgr-cards"><mat-icon aria-hidden="true">badge</mat-icon>ID card requests</h2>
+      <eiw-card-queue stage="Manager" [embedded]="true" emptyText="No ID card requests are waiting for your approval." />
     </section>
+    @if (canDecideAccess) {
+      <section class="queue" aria-labelledby="mgr-access">
+        <h2 class="queue-title" id="mgr-access"><mat-icon aria-hidden="true">vpn_key</mat-icon>Access requests</h2>
+        <eiw-approval-queue stage="Manager" [embedded]="true" />
+      </section>
+    }
   `,
 })
 export class ManagerApprovalsComponent {

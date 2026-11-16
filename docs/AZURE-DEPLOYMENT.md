@@ -98,8 +98,9 @@ Create the environment under **Settings → Environments** and add:
      `DECLARE` values (identity name and client ID) at the top of each.
 3. **Infrastructure stage 2**: run `2-apps` (preview, then apply). If a storage role from step 2 is
    missing, the preflight warns in preview and fails on apply. Copy the printed names into `FUNCTION_APP_NAME` and `WEB_APP_NAME`.
-4. **Database**: run *Deploy database* with `plan`, then `apply`. Tick *include_admin_provisioning* to run
-   the named-administrator script, and *include_demo_data* to run the demo data script (dev only).
+4. **Database**: run *Deploy database* with `plan`, then `apply`. Tick *include_admin_provisioning* only when
+   the named-administrator script is required. *purge_demo_data* is a separate, destructive, development-only
+   operation; do not select it as part of a routine deployment.
 5. **API**: run *Deploy API*. It checks the settings and identity before it deploys, then smoke tests
    `/api/auth/config`.
 6. **Web**: run *Deploy web*.
@@ -120,8 +121,11 @@ Re-run infrastructure only when Bicep or settings change; stage 2 overwrites the
 * `baseline` records the current scripts as applied without running them, for a database built by hand
   (it requires `dbo.Users`).
 
-The admin provisioning script runs only with *include_admin_provisioning*; the demo data script runs only with *include_demo_data*,
-and the runner refuses it when the database name contains `prod`. To run the same migrations locally:
+The admin provisioning script runs only with *include_admin_provisioning*. Demo data is not loaded by standard
+deployments. The optional `purge_demo_data` operation is development-only. It removes demo-linked records and
+unreferenced demo master rows, and aborts if a targeted master row is still referenced; the runner refuses
+production-named databases.
+To run the same migrations locally:
 
 ```powershell
 .\deploy\sql\Invoke-DbMigrations.ps1 -Server . -Database EIWAMS -Action plan -Authentication Integrated -TrustServerCertificate

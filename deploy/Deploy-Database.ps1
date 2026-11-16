@@ -1,23 +1,24 @@
 <#
 .SYNOPSIS
-    Deploys the EIWAMS database (schema, procedures, reference data and demo data) to a local SQL Server.
+    Deploys the EIWAMS database (schema, procedures and reference data) to a local SQL Server.
 
 .DESCRIPTION
-    Applies EIWAMS.Infrastructure\SQL\01..12 in order using Windows authentication. 11 is required reference data,
-    12 is dev-only demo data (skip it with -SkipSeed) and 13 provisions named administrators
+    Applies EIWAMS.Infrastructure\SQL\01..11 in order using Windows authentication (11 is required reference data).
+    12_PurgeDemoData.sql is opt-in (-PurgeDemoData, never for databases whose name contains 'prod'): it deletes the
+    records created by the former demo-data script and all transactional data. 13 provisions named administrators
     (-IncludeAdminProvisioning). All scripts are idempotent. For Azure SQL use deploy\sql\Invoke-DbMigrations.ps1
     (checksum-tracked) or the "Deploy database" GitHub workflow.
 
 .EXAMPLE
     .\Deploy-Database.ps1
     .\Deploy-Database.ps1 -Database EIWAMS_Test
-    .\Deploy-Database.ps1 -Server '.\SQLEXPRESS' -SkipSeed
+    .\Deploy-Database.ps1 -Database EIWAMS_Test -PurgeDemoData
 #>
 [CmdletBinding()]
 param(
     [string]$Server = 'localhost',
     [string]$Database = 'EIWAMS',
-    [switch]$SkipSeed,
+    [switch]$PurgeDemoData,
     [switch]$IncludeAdminProvisioning,
     [string]$ScriptsPath = (Join-Path $PSScriptRoot '..\EIWAMS.Infrastructure\SQL')
 )
@@ -30,8 +31,8 @@ if (-not (Get-Command sqlcmd -ErrorAction SilentlyContinue)) {
 if ($Database -notmatch '^[A-Za-z0-9_]+$') {
     throw "Invalid database name '$Database'."
 }
-if (-not $SkipSeed -and $Database -match '(?i)prod') {
-    throw 'Demo data must never be loaded into a production database. Use -SkipSeed.'
+if ($PurgeDemoData -and $Database -match '(?i)prod') {
+    throw 'The demo data purge must never be run against a production database.'
 }
 
 $ScriptsPath = (Resolve-Path $ScriptsPath).Path
@@ -58,7 +59,7 @@ $scripts = Get-ChildItem -Path $ScriptsPath -Filter '*.sql' |
     Sort-Object Name |
     Where-Object {
         switch -Regex ($_.Name) {
-            '^12_' { -not $SkipSeed; break }
+            '^12_' { [bool]$PurgeDemoData; break }
             '^13_' { [bool]$IncludeAdminProvisioning; break }
             default { $true }
         }

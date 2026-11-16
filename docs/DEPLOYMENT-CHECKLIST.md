@@ -24,10 +24,11 @@ Copy-Item C:\inetpub\EIWAMS C:\inetpub\EIWAMS.prev -Recurse -Force -ErrorAction 
 
 ## 2. Database
 
-- [ ] `.\deploy\Deploy-Database.ps1` (parameters in the script header). It applies `EIWAMS.Infrastructure\SQL\01..12`
-      in name order; scripts are idempotent. Skip demo data in production (see the script's switches).
+- [ ] `.\deploy\Deploy-Database.ps1` (parameters in the script header). Standard deployment applies the schema,
+      procedures and reference seed. The opt-in `-PurgeDemoData` switch is development-only; it aborts when a
+      targeted demo master row is referenced.
 - [ ] Or with checksum tracking: `.\deploy\sql\Invoke-DbMigrations.ps1 -Server localhost -Database EIWAMS -Action plan -Authentication Integrated -TrustServerCertificate`, then `-Action apply`
-- [ ] Verify: `sqlcmd -S localhost -E -C -d EIWAMS -Q "SELECT COUNT(*) FROM dbo.Roles; SELECT COUNT(*) FROM dbo.Permissions; SELECT COUNT(*) FROM dbo.Menus"` returns 11 roles and the seeded v2 permissions/menus
+- [ ] Verify: `sqlcmd -S localhost -E -C -d EIWAMS -Q "SELECT COUNT(*) FROM dbo.Roles; SELECT COUNT(*) FROM dbo.Permissions; SELECT COUNT(*) FROM dbo.Menus"` returns the simplified role set and current permissions
 - [ ] The API login has `db_datareader`, `db_datawriter` and `EXECUTE` only
 
 ## 3. API (Azure Functions host)
@@ -52,23 +53,23 @@ Copy-Item C:\inetpub\EIWAMS C:\inetpub\EIWAMS.prev -Recurse -Force -ErrorAction 
 
 ## 6. Smoke journey
 
-Use the seeded DevHeader users for local validation and test employees/locations for deployed environments.
-Employees already exist in HRMS/Entra ID: there is no employee-creation UI. Record evidence (screenshots and
-correlation IDs) and follow [API-CONTRACT.md](API-CONTRACT.md) for the full state/permission rules.
+Use explicitly provisioned employee and approver accounts for validation; no demo accounts are shipped. Record
+evidence (screenshots and correlation IDs) and follow [API-CONTRACT.md](API-CONTRACT.md) for the full state/permission
+rules.
 
 | # | Actor | Step | Expected |
 |---|---|---|---|
-| S1 | any seeded user | Sign in and inspect the top navigation | Menus match the user's database-driven permissions; Auditor is read-only and no employee create/edit controls or routes are exposed |
-| S2 | Entra user with a matching Active employee `WorkEmail` | Sign in for the first time | JIT provisioning links the employee, grants Employee (and Manager when they have active direct reports), and records the audit event |
-| S3 | Entra user with no matching Active employee | Sign in | Access denied; no employee is created |
-| S4 | Kiran (14) | Complete My Profile, upload a valid photo, and raise a New ID card request | Profile fields save; photo is JPEG/PNG <= 1 MB; request starts at `PendingManager` |
-| S5 | Sai (11) -> Hari (2) -> Isha (12) | Approve -> verify -> approve; mark printed; issue | `PendingManager` -> `PendingHR` -> `PendingIdCardTeam` -> `Printing` -> `ReadyToIssue` -> `Closed`; new card is Active and UID is masked |
-| S6 | Kiran (14) -> Sai (11) -> Hari (2) -> Sanjay (4) -> Isha (12) | Raise and process a Lost request | Old card is blocked on request, proceeds through manager and HR to Security review, is deactivated at security approval, then the new card is printed and issued |
-| S7 | Esha (7) -> Meera (3) -> Sai (11) -> Farah (5) | Submit a Building access request and approve each stage | Manager -> SecurityHead -> AccessControl; status becomes Approved, then provisioning makes it Provisioned (shown as “Completed”) |
-| S8 | Esha (7) -> Meera (3) -> Sanjay (4) -> Farah (5) | Submit a Wing/Floor access request and approve each stage | Manager -> Security -> AccessControl; target wing/floor belongs to the selected building |
-| S9 | Arvind (13) | Provision an approved access request; then revoke a permission | Provisioning succeeds; revocation is reflected in the permission record |
+| S1 | Employee account | Sign in and inspect Home and top navigation | Home is the landing page; only available employee tasks and role-authorized work areas are shown |
+| S2 | Entra user with a matching active employee `WorkEmail` | Sign in for the first time | The user is linked to the employee, receives Employee (and Manager when they have active direct reports), and the action is audited |
+| S3 | Entra user with no matching employee | Sign in for the first time | An employee record is provisioned from Entra claims and linked to the user; Employee is assigned |
+| S4 | Employee account | Open My Profile, upload a valid photo, and raise an ID card request | Profile fields save; photo is JPEG/PNG <= 1 MB; request enters the manager approval flow |
+| S5 | Employee, Manager, HR, ID Card Team | Approve, verify, print, and issue an ID card request | Each authorized role sees its next action; the card becomes Active and its UID is masked |
+| S6 | Employee and authorized approvers | Raise and process a Lost card request | The old card is blocked immediately; the request follows manager, HR, security review, printing, and issue steps |
+| S7 | Employee, Manager, Security Head, Access Control | Submit and approve a Building access request | Manager -> Security Head -> Access Control; provisioning makes it Completed |
+| S8 | Employee, Manager, Security, Access Control | Submit and approve a Wing/Floor access request | Manager -> Security -> Access Control; the target wing/floor belongs to the selected building |
+| S9 | Access Control account | Provision an approved access request, then revoke a permission | Provisioning succeeds; revocation is reflected in the permission record |
 | S10 | any approver | Try to approve their own request; reject without a reason | Self-approval returns 403; rejection without comments is rejected |
-| S11 | authorized test user | Exercise allowed and blocked RFID swipes, review the resulting violation, inspect audit history/timeline and export a report | Decisions and violations are correct; workflow steps and notifications are present; audit entries include correlation IDs and CSV export succeeds |
+| S11 | Employee and approver accounts | Validate the primary navigation and key screens at desktop and 390px mobile widths | The request and approval flows remain usable without horizontal overflow or showcase-only screens |
 | S12 | - | Send `X-User-Id` to the production API | Rejected; DevHeader is local-development only |
 
 ## 7. Rollback

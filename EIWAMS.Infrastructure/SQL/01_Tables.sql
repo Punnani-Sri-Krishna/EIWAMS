@@ -175,9 +175,9 @@ CREATE TABLE dbo.Employees (
     LastName          NVARCHAR(100) NOT NULL,
     WorkEmail         NVARCHAR(256) NOT NULL,
     EmployeeType      NVARCHAR(20)  NOT NULL CONSTRAINT CK_Employees_Type CHECK (EmployeeType IN (N'Permanent', N'Contract', N'Intern', N'Vendor')),
-    DepartmentId      INT NOT NULL CONSTRAINT FK_Employees_Departments REFERENCES dbo.Departments (DepartmentId),
+    DepartmentId      INT NULL CONSTRAINT FK_Employees_Departments REFERENCES dbo.Departments (DepartmentId),
     ManagerEmployeeId INT NULL CONSTRAINT FK_Employees_Manager REFERENCES dbo.Employees (EmployeeId),
-    LocationId        INT NOT NULL CONSTRAINT FK_Employees_Locations REFERENCES dbo.Locations (LocationId),
+    LocationId        INT NULL CONSTRAINT FK_Employees_Locations REFERENCES dbo.Locations (LocationId),
     EmploymentStatus  NVARCHAR(20)  NOT NULL CONSTRAINT DF_Employees_Status DEFAULT (N'Active')
                       CONSTRAINT CK_Employees_Status CHECK (EmploymentStatus IN (N'Active', N'Inactive', N'Exited')),
     JoinDate          DATE NOT NULL,
@@ -198,6 +198,24 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'UX_Employees_UserId')
     CREATE UNIQUE INDEX UX_Employees_UserId ON dbo.Employees (UserId) WHERE UserId IS NOT NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Manager')
     CREATE INDEX IX_Employees_Manager ON dbo.Employees (ManagerEmployeeId);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Dept_Loc_Status')
+    CREATE INDEX IX_Employees_Dept_Loc_Status ON dbo.Employees (DepartmentId, LocationId, EmploymentStatus);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Location')
+    CREATE INDEX IX_Employees_Location ON dbo.Employees (LocationId) INCLUDE (EmploymentStatus);
+GO
+
+-- Wave 3: every signed-in user is an employee; auto-provisioned employees have no department/location yet.
+IF COLUMNPROPERTY(OBJECT_ID(N'dbo.Employees'), N'DepartmentId', 'AllowsNull') = 0
+   OR COLUMNPROPERTY(OBJECT_ID(N'dbo.Employees'), N'LocationId', 'AllowsNull') = 0
+BEGIN
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Dept_Loc_Status' AND object_id = OBJECT_ID(N'dbo.Employees'))
+        DROP INDEX IX_Employees_Dept_Loc_Status ON dbo.Employees;
+    IF EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Location' AND object_id = OBJECT_ID(N'dbo.Employees'))
+        DROP INDEX IX_Employees_Location ON dbo.Employees;
+    ALTER TABLE dbo.Employees ALTER COLUMN DepartmentId INT NULL;
+    ALTER TABLE dbo.Employees ALTER COLUMN LocationId INT NULL;
+END
+GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Dept_Loc_Status')
     CREATE INDEX IX_Employees_Dept_Loc_Status ON dbo.Employees (DepartmentId, LocationId, EmploymentStatus);
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Employees_Location')

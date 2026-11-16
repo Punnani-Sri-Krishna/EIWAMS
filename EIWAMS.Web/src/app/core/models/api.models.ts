@@ -48,16 +48,6 @@ export interface CurrentUser {
   facilityIds: number[];
 }
 
-export interface MenuItem {
-  menuId: number;
-  section: string;
-  sectionOrder: number;
-  label: string;
-  icon: string;
-  route: string;
-  sortOrder: number;
-}
-
 export interface IdName {
   id: number;
   name: string;
@@ -75,7 +65,6 @@ export interface Lookups {
   }[];
   employees: { id: number; name: string; employeeNumber: string }[];
   users: IdName[];
-  readers: { id: string; name: string; locationId: number }[];
   employeeTypes: string[];
   employmentStatuses: string[];
   cardTypes: string[];
@@ -93,12 +82,5 @@ export interface Lookups {
   accessRequestStatuses: string[];
   approvalStages: string[];
   permissionStatuses: string[];
-  eventTypes: string[];
-  violationTypes: string[];
-  violationStatuses: string[];
-  severities: string[];
-  incidentTypes: string[];
-  incidentStatuses: string[];
-  visitorPassStatuses: string[];
   locationTypes: string[];
 }

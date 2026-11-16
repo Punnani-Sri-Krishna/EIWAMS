@@ -4,33 +4,37 @@
   the bootstrap System Administrator (user 1). Idempotent: catalogue rows
   are merged; role grants are only added (admin edits are preserved),
   except SystemAdmin which always holds every permission.
+  Wave 3 (simplification): the RFID, violations, incidents, blacklist,
+  visitors, reports, readers and settings modules are removed (their
+  permissions, grants and menus are deleted/deactivated) and the roles
+  Reception, Auditor and FacilityAdmin are retired (their users are moved
+  to Employee / AccessControlTeam). Every user is an employee.
 =====================================================================*/
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 GO
 
 BEGIN TRAN;
-
 /*------------------------------ Permissions -------------------------*/
 DECLARE @Perm TABLE (PermissionCode NVARCHAR(100) PRIMARY KEY, ModuleName NVARCHAR(50), Description NVARCHAR(300));
 INSERT @Perm VALUES
- (N'Dashboard.View',        N'Dashboard',   N'View the dashboard and personal work queue'),
+ (N'Dashboard.View',        N'Dashboard',   N'View the home dashboard and personal work queue'),
  (N'Employees.View',        N'Employees',   N'View own and direct-report employee records'),
  (N'Employees.ViewAll',     N'Employees',   N'View all employee records within facility scope'),
  (N'Employees.Manage',      N'Employees',   N'Create and update employee identity records'),
  (N'Employees.Transfer',    N'Employees',   N'Transfer employees between departments, managers and locations'),
  (N'Employees.Deactivate',  N'Employees',   N'Deactivate or exit employees (revokes cards and permissions)'),
  (N'Employees.Sync',        N'Employees',   N'Synchronize employee records from HR systems'),
- (N'Cards.View',            N'Cards',       N'View own RFID cards and card requests'),
- (N'Cards.ViewAll',         N'Cards',       N'View all RFID cards within facility scope'),
+ (N'Cards.View',            N'Cards',       N'View own ID cards and card requests'),
+ (N'Cards.ViewAll',         N'Cards',       N'View all ID cards within facility scope'),
  (N'Cards.Request',         N'Cards',       N'Raise card requests and report own cards lost'),
  (N'Cards.Verify',          N'Cards',       N'Verify, approve or reject card requests'),
  (N'Cards.ManagerApprove',  N'Cards',       N'Approve card requests raised by direct reports'),
  (N'Cards.HrVerify',        N'Cards',       N'Verify employee details for card requests'),
  (N'Cards.SecurityReview',  N'Cards',       N'Review lost card requests'),
  (N'Cards.Process',         N'Cards',       N'Approve, print and issue ID cards'),
- (N'Cards.Issue',           N'Cards',       N'Issue, activate and replace RFID cards'),
- (N'Cards.Block',           N'Cards',       N'Block or deactivate RFID cards'),
+ (N'Cards.Issue',           N'Cards',       N'Issue, activate and replace ID cards'),
+ (N'Cards.Block',           N'Cards',       N'Block or deactivate ID cards'),
  (N'AccessRequests.View',   N'Access',      N'View own and related access requests'),
  (N'AccessRequests.ViewAll',N'Access',      N'View all access requests within facility scope'),
  (N'AccessRequests.Create', N'Access',      N'Create, edit, submit and cancel access requests'),
@@ -39,24 +43,10 @@ INSERT @Perm VALUES
  (N'Permissions.View',      N'Permissions', N'View access permissions'),
  (N'Permissions.Provision', N'Permissions', N'Provision approved access requests'),
  (N'Permissions.Revoke',    N'Permissions', N'Revoke access permissions'),
- (N'Rfid.View',             N'RFID',        N'View RFID events and readers'),
- (N'Rfid.Ingest',           N'RFID',        N'Submit RFID reader events'),
- (N'Violations.View',       N'Security',    N'View access violations'),
- (N'Violations.Review',     N'Security',    N'Review and classify access violations'),
- (N'Incidents.View',        N'Security',    N'View security incidents'),
- (N'Incidents.Manage',      N'Security',    N'Open, assign, update and close security incidents'),
- (N'Blacklist.View',        N'Security',    N'View the blacklist'),
- (N'Blacklist.Manage',      N'Security',    N'Add and lift blacklist entries'),
- (N'Visitors.View',         N'Visitors',    N'View visitors and visitor passes'),
- (N'Visitors.Manage',       N'Visitors',    N'Register visitors and manage pass check-in/out'),
- (N'Visitors.Approve',      N'Visitors',    N'Approve visitor passes'),
- (N'Reports.View',          N'Reports',     N'View operational reports'),
- (N'Reports.Export',        N'Reports',     N'Export operational reports to CSV'),
- (N'Audit.View',            N'Reports',     N'View the audit trail'),
- (N'Users.Manage',          N'Admin',       N'Manage users, role assignments and facility scopes'),
+ (N'Audit.View',            N'Admin',       N'View the audit trail (API)'),
+ (N'Users.Manage',          N'Admin',       N'Manage employees'' roles, account status and facility scopes'),
  (N'Roles.Manage',          N'Admin',       N'Manage role permissions'),
- (N'Reference.Manage',      N'Admin',       N'Manage departments, locations and readers'),
- (N'Settings.Manage',       N'Admin',       N'Manage system settings');
+ (N'Reference.Manage',      N'Admin',       N'Manage departments and locations');
 
 MERGE dbo.Permissions AS t
 USING @Perm AS s ON t.PermissionCode = s.PermissionCode
@@ -64,23 +54,30 @@ WHEN MATCHED AND (t.ModuleName <> s.ModuleName OR ISNULL(t.Description, N'') <> 
     THEN UPDATE SET ModuleName = s.ModuleName, Description = s.Description
 WHEN NOT MATCHED BY TARGET THEN INSERT (PermissionCode, ModuleName, Description) VALUES (s.PermissionCode, s.ModuleName, s.Description);
 
+-- Removed modules (wave 3): delete their permissions with grants and menu links.
+DECLARE @Removed TABLE (PermissionCode NVARCHAR(100) PRIMARY KEY);
+INSERT @Removed VALUES (N'Rfid.View'), (N'Rfid.Ingest'), (N'Violations.View'), (N'Violations.Review'), (N'Incidents.View'), (N'Incidents.Manage'),
+ (N'Blacklist.View'), (N'Blacklist.Manage'), (N'Visitors.View'), (N'Visitors.Manage'), (N'Visitors.Approve'), (N'Reports.View'),
+ (N'Reports.Export'), (N'Settings.Manage');
+DELETE mp FROM dbo.MenuPermissions mp JOIN dbo.Permissions p ON p.PermissionId = mp.PermissionId JOIN @Removed x ON x.PermissionCode = p.PermissionCode;
+DELETE rp FROM dbo.RolePermissions rp JOIN dbo.Permissions p ON p.PermissionId = rp.PermissionId JOIN @Removed x ON x.PermissionCode = p.PermissionCode;
+DELETE p FROM dbo.Permissions p JOIN @Removed x ON x.PermissionCode = p.PermissionCode;
+
 /*--------------------------------- Roles ----------------------------*/
+-- Simplified roles. Labels shown in the UI: Employee, Manager, HR, Security, System Admin, Security Head, ID Card Team, Access Control.
 DECLARE @Role TABLE (SortKey INT PRIMARY KEY, RoleName NVARCHAR(50), Description NVARCHAR(300));
 INSERT @Role VALUES
- (1, N'Employee',      N'Every employee: own identity, cards and access requests'),
- (2, N'Manager',       N'Line manager: first-stage approval for direct reports'),
- (3, N'HRAdmin',       N'HR administrator: employee identity lifecycle and card issuance'),
- (4, N'SecurityTeam',  N'Security operations: approvals, RFID monitoring, violations and incidents'),
- (5, N'FacilityAdmin', N'Facility administrator: final approval, provisioning, readers and visitors'),
- (6, N'Reception',     N'Reception desk: visitor registration and passes'),
- (7, N'SystemAdmin',   N'System administrator: full access'),
- (8, N'Auditor',       N'Read-only auditor across all facilities'),
- (9, N'SecurityHead', N'Approves building access and reviews security-sensitive card requests'),
- (10, N'IdCardTeam', N'Processes, prints and issues ID cards'),
- (11, N'AccessControlTeam', N'Approves and provisions workplace access');
+ (1, N'Employee',          N'Employee (every signed-in person): own profile, ID card and access requests'),
+ (2, N'Manager',           N'Manager: approves requests raised by direct reports'),
+ (3, N'HRAdmin',           N'HR: employee records and ID card request verification'),
+ (4, N'SecurityTeam',      N'Security: lost-card review, card blocking and access approvals'),
+ (5, N'SystemAdmin',       N'System Admin: employees & roles, locations and departments'),
+ (6, N'SecurityHead',      N'Security Head: approves building access and security-sensitive card requests'),
+ (7, N'IdCardTeam',        N'ID Card Team: processes, prints and issues ID cards'),
+ (8, N'AccessControlTeam', N'Access Control: reviews and provisions workplace access');
 
 DECLARE @k INT = 1;
-WHILE @k <= 11
+WHILE @k <= 8
 BEGIN
     DECLARE @rn NVARCHAR(50), @rd NVARCHAR(300);
     SELECT @rn = RoleName, @rd = Description FROM @Role WHERE SortKey = @k;
@@ -91,38 +88,42 @@ BEGIN
     SET @k += 1;
 END
 
+-- Retire Reception, Auditor and FacilityAdmin: FacilityAdmin users become AccessControlTeam, every member keeps Employee.
+INSERT dbo.UserRoles (UserId, RoleId)
+SELECT DISTINCT ur.UserId, t.RoleId
+FROM dbo.UserRoles ur JOIN dbo.Roles o ON o.RoleId = ur.RoleId
+JOIN dbo.Roles t ON t.RoleName = N'AccessControlTeam'
+WHERE o.RoleName = N'FacilityAdmin'
+  AND NOT EXISTS (SELECT 1 FROM dbo.UserRoles x WHERE x.UserId = ur.UserId AND x.RoleId = t.RoleId);
+INSERT dbo.UserRoles (UserId, RoleId)
+SELECT DISTINCT ur.UserId, t.RoleId
+FROM dbo.UserRoles ur JOIN dbo.Roles o ON o.RoleId = ur.RoleId
+JOIN dbo.Roles t ON t.RoleName = N'Employee'
+WHERE o.RoleName IN (N'FacilityAdmin', N'Reception', N'Auditor')
+  AND NOT EXISTS (SELECT 1 FROM dbo.UserRoles x WHERE x.UserId = ur.UserId AND x.RoleId = t.RoleId);
+DELETE ur FROM dbo.UserRoles ur JOIN dbo.Roles r ON r.RoleId = ur.RoleId WHERE r.RoleName IN (N'FacilityAdmin', N'Reception', N'Auditor');
+DELETE rp FROM dbo.RolePermissions rp JOIN dbo.Roles r ON r.RoleId = rp.RoleId WHERE r.RoleName IN (N'FacilityAdmin', N'Reception', N'Auditor');
+DELETE dbo.Roles WHERE RoleName IN (N'FacilityAdmin', N'Reception', N'Auditor');
+
 /*------------------------------ Role grants -------------------------*/
 DECLARE @Grant TABLE (RoleName NVARCHAR(50), PermissionCode NVARCHAR(100), PRIMARY KEY (RoleName, PermissionCode));
 DECLARE @Base TABLE (PermissionCode NVARCHAR(100) PRIMARY KEY);
 INSERT @Base VALUES (N'Dashboard.View'), (N'Employees.View'), (N'Cards.View'), (N'Cards.Request'), (N'AccessRequests.View'), (N'AccessRequests.Create');
 
-INSERT @Grant SELECT N'Employee', PermissionCode FROM @Base;
-INSERT @Grant SELECT r.RoleName, b.PermissionCode FROM @Base b CROSS JOIN (VALUES (N'Manager'), (N'HRAdmin'), (N'SecurityTeam'), (N'FacilityAdmin')) r (RoleName);
-INSERT @Grant SELECT r.RoleName, N'Dashboard.View' FROM (VALUES (N'SecurityHead'), (N'IdCardTeam'), (N'AccessControlTeam')) r (RoleName);
+INSERT @Grant SELECT r.RoleName, b.PermissionCode FROM @Base b
+CROSS JOIN (VALUES (N'Employee'), (N'Manager'), (N'HRAdmin'), (N'SecurityTeam'), (N'SecurityHead'), (N'IdCardTeam'), (N'AccessControlTeam')) r (RoleName);
 INSERT @Grant VALUES
- (N'Manager', N'Approvals.Decide'), (N'Manager', N'Permissions.View'), (N'Manager', N'Reports.View'),
- (N'Manager', N'Approvals.Team'), (N'Manager', N'Cards.ManagerApprove'),
+ (N'Manager', N'Approvals.Decide'), (N'Manager', N'Permissions.View'), (N'Manager', N'Approvals.Team'), (N'Manager', N'Cards.ManagerApprove'),
  (N'HRAdmin', N'Employees.ViewAll'), (N'HRAdmin', N'Employees.Manage'), (N'HRAdmin', N'Employees.Transfer'), (N'HRAdmin', N'Employees.Deactivate'),
- (N'HRAdmin', N'Employees.Sync'), (N'HRAdmin', N'Cards.ViewAll'), (N'HRAdmin', N'Cards.Issue'), (N'HRAdmin', N'Reports.View'), (N'HRAdmin', N'Reports.Export'),
- (N'HRAdmin', N'Cards.HrVerify'),
+ (N'HRAdmin', N'Employees.Sync'), (N'HRAdmin', N'Cards.ViewAll'), (N'HRAdmin', N'Cards.Issue'), (N'HRAdmin', N'Cards.HrVerify'),
  (N'SecurityTeam', N'Cards.ViewAll'), (N'SecurityTeam', N'Cards.Verify'), (N'SecurityTeam', N'Cards.Block'), (N'SecurityTeam', N'Cards.Issue'),
- (N'SecurityTeam', N'Cards.SecurityReview'),
- (N'SecurityTeam', N'Approvals.Decide'), (N'SecurityTeam', N'Permissions.View'), (N'SecurityTeam', N'Permissions.Revoke'),
- (N'SecurityTeam', N'Rfid.View'), (N'SecurityTeam', N'Rfid.Ingest'), (N'SecurityTeam', N'Violations.View'), (N'SecurityTeam', N'Violations.Review'),
- (N'SecurityTeam', N'Incidents.View'), (N'SecurityTeam', N'Incidents.Manage'), (N'SecurityTeam', N'Blacklist.View'), (N'SecurityTeam', N'Blacklist.Manage'),
- (N'SecurityTeam', N'Visitors.View'), (N'SecurityTeam', N'Reports.View'), (N'SecurityTeam', N'Reports.Export'), (N'SecurityTeam', N'Audit.View'),
- (N'FacilityAdmin', N'Approvals.Decide'), (N'FacilityAdmin', N'Permissions.View'), (N'FacilityAdmin', N'Permissions.Provision'),
- (N'FacilityAdmin', N'Permissions.Revoke'), (N'FacilityAdmin', N'Rfid.View'), (N'FacilityAdmin', N'Visitors.View'), (N'FacilityAdmin', N'Visitors.Approve'),
- (N'FacilityAdmin', N'Reference.Manage'), (N'FacilityAdmin', N'Reports.View'),
- (N'SecurityHead', N'AccessRequests.View'), (N'SecurityHead', N'Approvals.Decide'), (N'SecurityHead', N'Cards.SecurityReview'), (N'SecurityHead', N'Reports.View'),
- (N'IdCardTeam', N'Cards.Process'), (N'IdCardTeam', N'Cards.ViewAll'), (N'IdCardTeam', N'Employees.View'),
- (N'AccessControlTeam', N'AccessRequests.ViewAll'), (N'AccessControlTeam', N'Approvals.Decide'),
- (N'AccessControlTeam', N'Permissions.View'), (N'AccessControlTeam', N'Permissions.Provision'),
- (N'Reception', N'Dashboard.View'), (N'Reception', N'Employees.View'), (N'Reception', N'Visitors.View'), (N'Reception', N'Visitors.Manage'),
- (N'Reception', N'Visitors.Approve'), (N'Reception', N'Rfid.View');
+ (N'SecurityTeam', N'Cards.SecurityReview'), (N'SecurityTeam', N'Approvals.Decide'), (N'SecurityTeam', N'Permissions.View'),
+ (N'SecurityTeam', N'Permissions.Revoke'), (N'SecurityTeam', N'Audit.View'),
+ (N'SecurityHead', N'Approvals.Decide'), (N'SecurityHead', N'Cards.SecurityReview'),
+ (N'IdCardTeam', N'Cards.Process'), (N'IdCardTeam', N'Cards.ViewAll'),
+ (N'AccessControlTeam', N'AccessRequests.ViewAll'), (N'AccessControlTeam', N'Approvals.Decide'), (N'AccessControlTeam', N'Permissions.View'),
+ (N'AccessControlTeam', N'Permissions.Provision'), (N'AccessControlTeam', N'Permissions.Revoke');
 INSERT @Grant SELECT N'SystemAdmin', PermissionCode FROM @Perm;
-INSERT @Grant SELECT N'Auditor', PermissionCode FROM @Perm
-WHERE PermissionCode LIKE N'%.View' OR PermissionCode LIKE N'%.ViewAll' OR PermissionCode IN (N'Reports.Export', N'Audit.View');
 
 INSERT dbo.RolePermissions (RoleId, PermissionId)
 SELECT r.RoleId, p.PermissionId
@@ -132,35 +133,28 @@ JOIN dbo.Permissions p ON p.PermissionCode = g.PermissionCode
 WHERE NOT EXISTS (SELECT 1 FROM dbo.RolePermissions rp WHERE rp.RoleId = r.RoleId AND rp.PermissionId = p.PermissionId);
 
 /*--------------------------------- Menus ----------------------------*/
+-- Only the simplified navigation is active; every menu row not listed here is deactivated.
 DECLARE @Menu TABLE (MenuCode NVARCHAR(50) PRIMARY KEY, Section NVARCHAR(50), SectionOrder INT, Label NVARCHAR(100), Icon NVARCHAR(50),
                      Route NVARCHAR(200), SortOrder INT, Perms NVARCHAR(400));
 INSERT @Menu VALUES
- (N'DASHBOARD',         N'Dashboard', 1, N'Dashboard',           N'space_dashboard',        N'/dashboard',         1, N'Dashboard.View'),
- (N'EMPLOYEES',         N'People',    2, N'Employees',           N'badge',                  N'/employees',         1, N'Employees.View,Employees.ViewAll'),
- (N'CARDS',             N'People',    2, N'ID Cards',            N'contactless',            N'/cards',             2, N'Cards.View,Cards.ViewAll'),
- (N'ACCESS_REQUESTS',   N'Access',    3, N'Access Requests',     N'key',                    N'/access-requests',   1, N'AccessRequests.View'),
- (N'APPROVALS',         N'Access',    3, N'Approvals',           N'task_alt',               N'/approvals',         2, N'Approvals.Decide'),
- (N'PERMISSIONS',       N'Access',    3, N'Permissions',         N'verified_user',          N'/permissions',       3, N'Permissions.View'),
- (N'RFID_MONITOR',      N'Security',  4, N'RFID Monitor',        N'sensors',                N'/rfid-monitor',      1, N'Rfid.View'),
- (N'VIOLATIONS',        N'Security',  4, N'Violations',          N'gpp_maybe',              N'/violations',        2, N'Violations.View'),
- (N'INCIDENTS',         N'Security',  4, N'Incidents',           N'policy',                 N'/incidents',         3, N'Incidents.View'),
- (N'BLACKLIST',         N'Security',  4, N'Blacklist',           N'block',                  N'/blacklist',         4, N'Blacklist.View'),
- (N'VISITORS',          N'Visitors',  5, N'Visitors',            N'person_pin_circle',      N'/visitors',          1, N'Visitors.View'),
- (N'REPORTS',           N'Insights',  6, N'Reports',             N'analytics',              N'/reports',           1, N'Reports.View'),
- (N'AUDIT',             N'Insights',  6, N'Audit Trail',         N'history',                N'/audit',             2, N'Audit.View'),
- (N'ADMIN_USERS',       N'Admin',     7, N'Users',               N'manage_accounts',        N'/admin/users',       1, N'Users.Manage'),
- (N'ADMIN_ROLES',       N'Admin',     7, N'Roles & Permissions', N'admin_panel_settings',   N'/admin/roles',       2, N'Roles.Manage'),
- (N'ADMIN_DEPARTMENTS', N'Admin',     7, N'Departments',         N'apartment',              N'/admin/departments', 3, N'Reference.Manage'),
- (N'ADMIN_LOCATIONS',   N'Admin',     7, N'Locations & Zones',   N'location_city',          N'/admin/locations',   4, N'Reference.Manage'),
- (N'ADMIN_READERS',     N'Admin',     7, N'RFID Readers',        N'settings_input_antenna', N'/admin/readers',     5, N'Reference.Manage'),
- (N'ADMIN_SETTINGS',    N'Admin',     7, N'Settings',            N'tune',                   N'/admin/settings',    6, N'Settings.Manage');
+ (N'DASHBOARD',         N'Home',      1, N'Home',                N'home',                 N'/dashboard',         1, N'Dashboard.View'),
+ (N'CARDS',             N'Requests',  2, N'ID card requests',    N'badge',                N'/cards',             1, N'Cards.View,Cards.ViewAll'),
+ (N'ACCESS_REQUESTS',   N'Requests',  2, N'Access requests',     N'key',                  N'/access-requests',   2, N'AccessRequests.View'),
+ (N'APPROVALS',         N'Approvals', 3, N'Approvals',           N'task_alt',             N'/approvals',         1, N'Approvals.Decide,Approvals.Team,Cards.ManagerApprove,Cards.HrVerify,Cards.SecurityReview'),
+ (N'ID_CARD_PROCESSING',N'Approvals', 3, N'ID Card Processing',  N'print',                N'/approvals/id-card', 2, N'Cards.Process'),
+ (N'PERMISSIONS',       N'Approvals', 3, N'Access Provisioning', N'verified_user',        N'/permissions',       3, N'Permissions.Provision'),
+ (N'EMPLOYEES',         N'People',    4, N'Employees',           N'groups',               N'/employees',         1, N'Employees.ViewAll'),
+ (N'ADMIN_USERS',       N'Admin',     5, N'Employees & roles',   N'manage_accounts',      N'/admin/employees',   1, N'Users.Manage'),
+ (N'ADMIN_LOCATIONS',   N'Admin',     5, N'Locations',           N'location_city',        N'/admin/locations',   2, N'Reference.Manage'),
+ (N'ADMIN_DEPARTMENTS', N'Admin',     5, N'Departments',         N'apartment',            N'/admin/departments', 3, N'Reference.Manage');
 
 MERGE dbo.Menus AS t
 USING @Menu AS s ON t.MenuCode = s.MenuCode
 WHEN MATCHED THEN UPDATE SET Section = s.Section, SectionOrder = s.SectionOrder, Label = s.Label, Icon = s.Icon, Route = s.Route,
                              SortOrder = s.SortOrder, IsActive = 1
 WHEN NOT MATCHED BY TARGET THEN INSERT (MenuCode, Section, SectionOrder, Label, Icon, Route, SortOrder, IsActive)
-    VALUES (s.MenuCode, s.Section, s.SectionOrder, s.Label, s.Icon, s.Route, s.SortOrder, 1);
+    VALUES (s.MenuCode, s.Section, s.SectionOrder, s.Label, s.Icon, s.Route, s.SortOrder, 1)
+WHEN NOT MATCHED BY SOURCE AND t.IsActive = 1 THEN UPDATE SET IsActive = 0;
 
 DELETE mp FROM dbo.MenuPermissions mp
 JOIN dbo.Menus m ON m.MenuId = mp.MenuId
@@ -175,7 +169,6 @@ CROSS APPLY STRING_SPLIT(s.Perms, N',') x
 JOIN dbo.Menus m ON m.MenuCode = s.MenuCode
 JOIN dbo.Permissions p ON p.PermissionCode = x.value
 WHERE NOT EXISTS (SELECT 1 FROM dbo.MenuPermissions mp WHERE mp.MenuId = m.MenuId AND mp.PermissionId = p.PermissionId);
-
 /*------------------------------- Settings ---------------------------*/
 DECLARE @Set TABLE (SettingKey NVARCHAR(100) PRIMARY KEY, SettingValue NVARCHAR(1000), Description NVARCHAR(300), DataType NVARCHAR(20));
 INSERT @Set VALUES
@@ -212,4 +205,8 @@ WHERE u.Email = N'admin@eiwams.local' AND r.RoleName = N'SystemAdmin'
   AND NOT EXISTS (SELECT 1 FROM dbo.UserRoles ur WHERE ur.UserId = u.UserId AND ur.RoleId = r.RoleId);
 
 COMMIT;
+GO
+
+-- Every user is an employee (wave 3): link or create employee records for users without one.
+EXEC dbo.usp_Internal_BackfillUserEmployees;
 GO

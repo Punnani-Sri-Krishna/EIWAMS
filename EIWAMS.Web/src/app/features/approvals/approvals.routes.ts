@@ -1,63 +1,76 @@
-import { Routes } from '@angular/router';
+import { inject } from '@angular/core';
+import { Router, Routes } from '@angular/router';
 
 import { permissionGuard } from '../../core/auth/permission.guard';
+import { approvalTabs } from '../../core/navigation/nav';
+import { SessionService } from '../../core/services/session.service';
 import { CardQueueComponent } from '../card-requests/card-queue.component';
 import { ApprovalQueueComponent } from './approval-queue.component';
+import { ApprovalsHubComponent } from './approvals-hub.component';
 import { ManagerApprovalsComponent } from './manager-approvals.component';
 import { TeamRequestsComponent } from './team-requests.component';
 
-const guard = (...permissions: string[]) => ({ canActivate: [permissionGuard], data: { permissions } });
+/** `/approvals` opens the first queue the user owns. */
+const firstTab = () => {
+  const session = inject(SessionService);
+  const tab = approvalTabs({ has: (p) => session.hasPermission(p), roles: session.user()?.roles ?? [] })[0];
+  return inject(Router).createUrlTree([tab ? tab.route : '/unauthorized']);
+};
 
-/** Approval queues (contract §7). Route data feeds component inputs (withComponentInputBinding). */
+/** Approvals page: one tab per queue (route data feeds component inputs via withComponentInputBinding). */
 const routes: Routes = [
-  { path: '', pathMatch: 'full', redirectTo: 'access' },
-  { path: 'manager', component: ManagerApprovalsComponent, title: 'Pending approvals | EIWAMS', ...guard('Cards.ManagerApprove') },
-  { path: 'team', component: TeamRequestsComponent, title: 'Team requests | EIWAMS', ...guard('Approvals.Team') },
   {
-    path: 'hr',
-    component: CardQueueComponent,
-    title: 'HR verification | EIWAMS',
-    canActivate: [permissionGuard],
-    data: {
-      permissions: ['Cards.HrVerify'],
-      stage: 'HR',
-      title: 'HR verification queue',
-      subtitle: 'Verify employee details for ID card requests approved by managers.',
-      emptyText: 'No ID card requests are waiting for HR verification.',
-    },
-  },
-  {
-    path: 'id-card',
-    component: CardQueueComponent,
-    title: 'ID card processing | EIWAMS',
-    canActivate: [permissionGuard],
-    data: {
-      permissions: ['Cards.Process'],
-      stage: 'IdCardTeam',
-      title: 'ID card processing queue',
-      subtitle: 'Approve verified requests, mark cards as printed and issue them to employees.',
-      emptyText: 'No ID card requests are waiting for processing.',
-    },
-  },
-  {
-    path: 'security',
-    component: CardQueueComponent,
-    title: 'Security approvals | EIWAMS',
-    canActivate: [permissionGuard],
-    data: {
-      permissions: ['Cards.SecurityReview'],
-      stage: 'Security',
-      title: 'Security approvals',
-      subtitle: 'Review lost-card reports. Approving permanently deactivates the lost card.',
-      emptyText: 'No lost-card requests are waiting for security review.',
-    },
-  },
-  {
-    path: 'access',
-    component: ApprovalQueueComponent,
-    title: 'Access requests review | EIWAMS',
-    ...guard('Approvals.Decide'),
-    data: { permissions: ['Approvals.Decide'], title: 'Access requests review' },
+    path: '',
+    component: ApprovalsHubComponent,
+    title: 'Approvals | EIWAMS',
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: firstTab },
+      {
+        path: 'manager',
+        component: ManagerApprovalsComponent,
+        title: 'Manager approvals | EIWAMS',
+        canActivate: [permissionGuard],
+        data: { permissions: ['Cards.ManagerApprove'] },
+      },
+      {
+        path: 'team',
+        component: TeamRequestsComponent,
+        title: 'Team requests | EIWAMS',
+        canActivate: [permissionGuard],
+        data: { permissions: ['Approvals.Team'], embedded: true },
+      },
+      {
+        path: 'hr',
+        component: CardQueueComponent,
+        title: 'HR verification | EIWAMS',
+        canActivate: [permissionGuard],
+        data: {
+          permissions: ['Cards.HrVerify'],
+          stage: 'HR',
+          embedded: true,
+          emptyText: 'No ID card requests are waiting for HR verification.',
+        },
+      },
+      {
+        path: 'security',
+        component: CardQueueComponent,
+        title: 'Security approvals | EIWAMS',
+        canActivate: [permissionGuard],
+        data: {
+          permissions: ['Cards.SecurityReview'],
+          stage: 'Security',
+          embedded: true,
+          emptyText: 'No lost-card requests are waiting for security review.',
+        },
+      },
+      {
+        path: 'access',
+        component: ApprovalQueueComponent,
+        title: 'Access requests review | EIWAMS',
+        canActivate: [permissionGuard],
+        data: { permissions: ['Approvals.Decide'], embedded: true },
+      },
+    ],
   },
 ];
 

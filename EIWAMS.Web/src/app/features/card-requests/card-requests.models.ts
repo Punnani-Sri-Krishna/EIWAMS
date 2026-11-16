@@ -170,9 +170,8 @@ const STEPS_BEFORE_SECURITY: StepDef[] = [
 const SECURITY_STEP: StepDef = { key: 'Security', label: 'Security', status: 'PendingSecurity' };
 const STEPS_AFTER_SECURITY: StepDef[] = [
   { key: 'IdCardTeam', label: 'ID Card Team', status: 'PendingIdCardTeam' },
-  { key: 'Printing', label: 'Printing', status: 'Printing' },
-  { key: 'ReadyToIssue', label: 'Ready to Issue', status: 'ReadyToIssue' },
-  { key: 'Issued', label: 'Issued', status: 'Closed' },
+  { key: 'Printed', label: 'Printed', status: 'Printing' },
+  { key: 'Issued', label: 'Issued', status: 'ReadyToIssue' },
 ];
 
 export function cardStepDefs(requestType: string): StepDef[] {
@@ -208,7 +207,7 @@ export function cardRequestSteps(r: Pick<CardRequestDetail, 'requestType' | 'sta
     const state: StageState = i < stopIndex ? 'done' : i === stopIndex ? stopState : 'pending';
     let entry: CardRequestHistoryItem | undefined;
     if (d.key === 'Submitted') entry = history.find((h) => h.action === 'Submit') ?? history[0];
-    else if (d.key === 'Issued') entry = history.find((h) => h.toStatus === 'Closed');
+    else if (d.key === 'Issued' && state === 'done') entry = history.find((h) => h.toStatus === 'Closed');
     else if (state === 'done') entry = [...history].reverse().find((h) => h.fromStatus === d.status);
     else if (state === 'rejected' || state === 'cancelled') entry = last;
     return {

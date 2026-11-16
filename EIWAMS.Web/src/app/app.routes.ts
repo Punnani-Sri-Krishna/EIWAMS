@@ -1,4 +1,4 @@
-﻿import { Routes } from '@angular/router';
+import { Routes } from '@angular/router';
 
 import { authGuard } from './core/auth/auth.guard';
 import { permissionGuard } from './core/auth/permission.guard';
@@ -10,6 +10,9 @@ const guarded = (path: string, permissions: string[], load: Routes[number]['load
   data: { permissions },
   loadChildren: load,
 });
+
+/** Approval queue permissions (any-of) for the Approvals page. */
+const APPROVAL_PERMISSIONS = ['Cards.ManagerApprove', 'Approvals.Team', 'Cards.HrVerify', 'Cards.SecurityReview', 'Approvals.Decide'];
 
 export const routes: Routes = [
   { path: 'login', title: 'Sign in | EIWAMS', loadComponent: () => import('./features/auth/login.component').then((m) => m.LoginComponent) },
@@ -27,7 +30,7 @@ export const routes: Routes = [
       { path: '', pathMatch: 'full', redirectTo: 'dashboard' },
       {
         path: 'dashboard',
-        title: 'Dashboard | EIWAMS',
+        title: 'Home | EIWAMS',
         canActivate: [permissionGuard],
         data: { permissions: ['Dashboard.View'] },
         loadComponent: () => import('./features/dashboard/dashboard.component').then((m) => m.DashboardComponent),
@@ -50,7 +53,7 @@ export const routes: Routes = [
         path: 'my-requests',
         title: 'My requests | EIWAMS',
         canActivate: [permissionGuard],
-        data: { permissions: ['Cards.View'] },
+        data: { permissions: ['Cards.View', 'AccessRequests.View'] },
         loadComponent: () => import('./features/my-requests/my-requests.component').then((m) => m.MyRequestsComponent),
       },
       {
@@ -77,18 +80,30 @@ export const routes: Routes = [
         },
         loadComponent: () => import('./features/card-requests/card-request-detail.component').then((m) => m.CardRequestDetailComponent),
       },
+      { path: 'cards', pathMatch: 'full', redirectTo: 'my-requests' },
+      {
+        path: 'id-card-processing',
+        title: 'ID card processing | EIWAMS',
+        canActivate: [permissionGuard],
+        data: {
+          permissions: ['Cards.Process'],
+          stage: 'IdCardTeam',
+          title: 'ID card processing',
+          subtitle: 'Approve verified requests, mark cards as printed and issue them.',
+          emptyText: 'No ID card requests are waiting for processing.',
+        },
+        loadComponent: () => import('./features/card-requests/card-queue.component').then((m) => m.CardQueueComponent),
+      },
       guarded('employees', ['Employees.View', 'Employees.ViewAll'], () => import('./features/employees/employees.routes')),
-      guarded('cards', ['Cards.View', 'Cards.ViewAll'], () => import('./features/cards/cards.routes')),
       guarded('access-requests', ['AccessRequests.View', 'AccessRequests.ViewAll', 'AccessRequests.Create', 'Approvals.Decide', 'Approvals.Team', 'Permissions.Provision'], () => import('./features/access-requests/access-requests.routes')),
-      guarded('approvals', ['Approvals.Decide', 'Approvals.Team', 'Cards.ManagerApprove', 'Cards.HrVerify', 'Cards.SecurityReview', 'Cards.Process'], () => import('./features/approvals/approvals.routes')),
-      guarded('permissions', ['Permissions.View', 'Permissions.Provision'], () => import('./features/permissions/permissions.routes')),
-      guarded('rfid-monitor', ['Rfid.View'], () => import('./features/rfid-monitor/rfid-monitor.routes')),
-      guarded('violations', ['Violations.View'], () => import('./features/violations/violations.routes')),
-      guarded('incidents', ['Incidents.View'], () => import('./features/incidents/incidents.routes')),
-      guarded('blacklist', ['Blacklist.View'], () => import('./features/blacklist/blacklist.routes')),
-      guarded('visitors', ['Visitors.View'], () => import('./features/visitors/visitors.routes')),
-      guarded('reports', ['Reports.View'], () => import('./features/reports/reports.routes')),
-      guarded('audit', ['Audit.View'], () => import('./features/audit/audit.routes')),
+      { path: 'approvals/id-card', redirectTo: 'id-card-processing' },
+      {
+        path: 'approvals',
+        loadChildren: () => import('./features/approvals/approvals.routes'),
+        data: { permissions: APPROVAL_PERMISSIONS },
+        canActivate: [permissionGuard],
+      },
+      guarded('permissions', ['Permissions.Provision'], () => import('./features/permissions/permissions.routes')),
       { path: 'admin', loadChildren: () => import('./features/admin/admin.routes') },
     ],
   },

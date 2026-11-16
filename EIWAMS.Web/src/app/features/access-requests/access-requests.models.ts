@@ -125,7 +125,7 @@ export function accessTypeLabel(type: string | null | undefined): string {
 export const STAGE_LABELS: Record<string, string> = {
   Manager: 'Manager',
   SecurityHead: 'Security Head',
-  Security: 'Security Officer',
+  Security: 'Security',
   AccessControl: 'Access Control',
 };
 
@@ -250,8 +250,8 @@ export function accessRequestSteps(r: Pick<AccessRequestDetail, 'accessType' | '
     });
   }
   steps.push({
-    key: 'Completed',
-    label: 'Completed',
+    key: 'Provisioned',
+    label: 'Provisioned',
     state: r.status === 'Provisioned' ? 'done' : r.status === 'Approved' ? 'current' : 'pending',
   });
   return steps;

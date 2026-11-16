@@ -1,11 +1,11 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { catchError, forkJoin, map, of } from 'rxjs';
+import { catchError, map, of } from 'rxjs';
 
 import { SessionService } from '../services/session.service';
 import { AuthService } from './auth.service';
 
-/** Requires a signed-in user and loads the profile and menu before entering the shell. */
+/** Requires a signed-in user and loads the profile (roles + permissions drive the navigation) before entering the shell. */
 export const authGuard: CanActivateFn = () => {
   const auth = inject(AuthService);
   const session = inject(SessionService);
@@ -18,7 +18,7 @@ export const authGuard: CanActivateFn = () => {
   if (session.user()) {
     return true;
   }
-  return forkJoin([session.loadProfile(), session.loadMenu()]).pipe(
+  return session.loadProfile().pipe(
     map(() => true),
     catchError(() => {
       auth.clearLocal();

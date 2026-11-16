@@ -6,8 +6,6 @@ using EIWAMS.Application.Models.DTOs.Common;
 using EIWAMS.Application.Models.DTOs.Employees;
 using EIWAMS.Application.Models.DTOs.Identity;
 using EIWAMS.Application.Models.DTOs.Insights;
-using EIWAMS.Application.Models.DTOs.Security;
-using EIWAMS.Application.Models.DTOs.Visitors;
 using EIWAMS.Infrastructure.Auth;
 
 namespace EIWAMS.Infrastructure.Repositories.Interfaces;
@@ -118,61 +116,13 @@ public interface IAccessRepository
     Task<AccessPermissionDto> RevokeAsync(ActorContext actor, long permissionId, string reason);
 }
 
-public interface ISecurityRepository
-{
-    Task<RfidIngestResultDto> IngestEventAsync(ActorContext actor, RfidEventRequest request);
-
-    Task<PagedResult<AccessLogDto>> SearchAccessLogsAsync(ActorContext actor, AccessLogQuery query);
-
-    Task<PagedResult<ViolationDto>> SearchViolationsAsync(ActorContext actor, ViolationQuery query);
-
-    Task<ViolationDto> ReviewViolationAsync(ActorContext actor, long violationId, ReviewViolationRequest request);
-
-    Task<PagedResult<IncidentDto>> SearchIncidentsAsync(ActorContext actor, IncidentQuery query);
-
-    Task<IncidentDetailDto> GetIncidentAsync(ActorContext actor, int incidentId);
-
-    Task<IncidentDetailDto> CreateIncidentAsync(ActorContext actor, CreateIncidentRequest request);
-
-    Task<IncidentDetailDto> UpdateIncidentAsync(ActorContext actor, int incidentId, UpdateIncidentRequest request);
-
-    Task<PagedResult<BlacklistEntryDto>> SearchBlacklistAsync(ActorContext actor, BlacklistQuery query);
-
-    Task<BlacklistEntryDto> CreateBlacklistAsync(ActorContext actor, CreateBlacklistRequest request);
-
-    Task<BlacklistEntryDto> LiftBlacklistAsync(ActorContext actor, int blacklistId, string reason);
-}
-
-public interface IVisitorRepository
-{
-    Task<PagedResult<VisitorDto>> SearchVisitorsAsync(ActorContext actor, PagedQuery query);
-
-    Task<VisitorDto> CreateVisitorAsync(ActorContext actor, CreateVisitorRequest request);
-
-    Task<PagedResult<VisitorPassDto>> SearchPassesAsync(ActorContext actor, VisitorPassQuery query);
-
-    Task<VisitorPassDto> CreatePassAsync(ActorContext actor, CreateVisitorPassRequest request);
-
-    Task<VisitorPassDto> TransitionPassAsync(ActorContext actor, long visitorPassId, string action, string? comments);
-}
-
 public interface IInsightsRepository
 {
     Task<HomeDashboardDto> GetHomeAsync(ActorContext actor);
 
-    Task<DashboardSummaryDto> GetSummaryAsync(ActorContext actor);
-
-    Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(ActorContext actor, int days);
-
-    Task<IReadOnlyList<LabelCountDto>> GetLabelCountsAsync(ActorContext actor, string procedure);
-
-    Task<IReadOnlyList<OccupancyDto>> GetOccupancyAsync(ActorContext actor);
-
     Task<IReadOnlyList<MyWorkItemDto>> GetMyWorkAsync(ActorContext actor);
 
     Task<IReadOnlyList<ActivityDto>> GetActivityAsync(ActorContext actor, int top);
-
-    Task<ReportResult> RunReportAsync(ActorContext actor, string procedure, ReportQuery query, bool export);
 
     Task<PagedResult<AuditLogDto>> SearchAuditAsync(ActorContext actor, AuditQuery query);
 
@@ -183,15 +133,7 @@ public interface IAdminRepository
 {
     Task<PagedResult<AdminUserDto>> SearchUsersAsync(ActorContext actor, AdminUserQuery query);
 
-    Task<AdminUserDto> SaveUserAsync(ActorContext actor, int? userId, SaveAdminUserRequest request);
-
-    Task<IReadOnlyList<RoleDto>> GetRolesAsync(ActorContext actor);
-
-    Task<IReadOnlyList<RolePermissionDto>> GetRolePermissionsAsync(ActorContext actor, int roleId);
-
-    Task<IReadOnlyList<RolePermissionDto>> SetRolePermissionsAsync(ActorContext actor, int roleId, IReadOnlyList<int> permissionIds);
-
-    Task<IReadOnlyList<PermissionCatalogDto>> GetPermissionCatalogAsync(ActorContext actor);
+    Task<AdminUserDto> SaveEmployeeAsync(ActorContext actor, int employeeId, SaveAdminUserRequest request);
 
     Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync(ActorContext actor);
 
@@ -200,12 +142,4 @@ public interface IAdminRepository
     Task<IReadOnlyList<LocationDto>> GetLocationsAsync(ActorContext actor);
 
     Task<LocationDto> SaveLocationAsync(ActorContext actor, int? locationId, SaveLocationRequest request);
-
-    Task<IReadOnlyList<ReaderDto>> GetReadersAsync(ActorContext actor);
-
-    Task<ReaderDto> SaveReaderAsync(ActorContext actor, bool isNew, string readerId, SaveReaderRequest request);
-
-    Task<IReadOnlyList<SettingDto>> GetSettingsAsync(ActorContext actor);
-
-    Task<IReadOnlyList<SettingDto>> UpdateSettingAsync(ActorContext actor, UpdateSettingRequest request);
 }

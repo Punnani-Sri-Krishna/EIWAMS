@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -27,16 +27,18 @@ import { KIT_IMPORTS } from './kit/ui.components';
   ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
-    <section class="page">
-      <header class="page-header">
-        <div>
-          <h1>Team requests</h1>
-          <p class="subtitle">ID card and access requests raised by your direct reports.</p>
-        </div>
-        <div class="page-actions">
-          <button mat-stroked-button type="button" (click)="list.load()"><mat-icon>refresh</mat-icon>Refresh</button>
-        </div>
-      </header>
+    <section [class.page]="!embedded()">
+      @if (!embedded()) {
+        <header class="page-header">
+          <div>
+            <h1>Team requests</h1>
+            <p class="subtitle">ID card and access requests raised by your direct reports.</p>
+          </div>
+          <div class="page-actions">
+            <button mat-stroked-button type="button" (click)="list.load()"><mat-icon>refresh</mat-icon>Refresh</button>
+          </div>
+        </header>
+      }
 
       <form class="filter-bar" (ngSubmit)="list.search()">
         <mat-button-toggle-group [formControl]="kind" (change)="list.search()" aria-label="Request kind" hideSingleSelectionIndicator>
@@ -50,6 +52,9 @@ import { KIT_IMPORTS } from './kit/ui.components';
           <mat-icon matSuffix>search</mat-icon>
         </mat-form-field>
         <button mat-flat-button type="submit">Apply</button>
+        @if (embedded()) {
+          <button mat-stroked-button type="button" (click)="list.load()"><mat-icon>refresh</mat-icon>Refresh</button>
+        }
       </form>
 
       <div class="data-card">
@@ -103,6 +108,7 @@ import { KIT_IMPORTS } from './kit/ui.components';
 })
 export class TeamRequestsComponent {
   private readonly service = inject(ApprovalsService);
+  readonly embedded = input(false);
   readonly search = new FormControl<string | null>(null);
   readonly kind = new FormControl<string>('', { nonNullable: true });
   readonly columns = ['request', 'employee', 'status', 'stage', 'submitted', 'open'];

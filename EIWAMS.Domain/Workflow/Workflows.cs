@@ -14,7 +14,7 @@ public static class AccessRequestWorkflow
     public const string Provisioned = "Provisioned";
     public const string Expired = "Expired";
 
-    public static readonly IReadOnlyList<string> Stages = ["Manager", "Security", "FacilityAdmin"];
+    public static readonly IReadOnlyList<string> Stages = ["Manager", "Security", "AccessControl"];
 
     private static readonly Dictionary<string, string[]> Transitions = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -60,29 +60,4 @@ public static class AccessRequestWorkflow
 
     public static bool RequiresComments(string decision)
         => decision is "Return" or "Reject";
-}
-
-/// <summary>Visitor-pass lifecycle: PendingApproval -> Approved -> Active -> CheckedOut, or Revoked.</summary>
-public static class VisitorPassWorkflow
-{
-    public const string Approve = "Approve";
-    public const string CheckIn = "CheckIn";
-    public const string CheckOut = "CheckOut";
-    public const string Revoke = "Revoke";
-
-    private static readonly Dictionary<string, (string[] From, string To)> Actions = new(StringComparer.OrdinalIgnoreCase)
-    {
-        [Approve] = (["PendingApproval"], "Approved"),
-        [CheckIn] = (["Approved"], "Active"),
-        [CheckOut] = (["Active"], "CheckedOut"),
-        [Revoke] = (["PendingApproval", "Approved", "Active"], "Revoked"),
-    };
-
-    public static IReadOnlyCollection<string> AllActions => Actions.Keys;
-
-    public static bool IsAllowed(string action, string currentStatus)
-        => Actions.TryGetValue(action, out var rule) && rule.From.Contains(currentStatus, StringComparer.OrdinalIgnoreCase);
-
-    public static string TargetStatus(string action)
-        => Actions.TryGetValue(action, out var rule) ? rule.To : throw new ArgumentException($"Unknown action '{action}'.", nameof(action));
 }

@@ -9,50 +9,50 @@ public sealed class AdminUserQuery : PagedQuery
 
 public sealed class AdminUserDto
 {
-    public int UserId { get; set; }
+    public int? UserId { get; set; }
 
     public string DisplayName { get; set; } = string.Empty;
 
     public string Email { get; set; } = string.Empty;
 
-    public Guid? EntraObjectId { get; set; }
-
     public bool IsActive { get; set; }
 
-    public bool AllFacilities { get; set; }
+    public IReadOnlyList<string> Roles { get; set; } = [];
 
-    public IReadOnlyList<int> RoleIds { get; set; } = [];
-
-    public IReadOnlyList<string> RoleNames { get; set; } = [];
-
-    public IReadOnlyList<int> FacilityIds { get; set; } = [];
-
-    public IReadOnlyList<string> FacilityNames { get; set; } = [];
-
-    public int? EmployeeId { get; set; }
+    public int EmployeeId { get; set; }
 
     public string? EmployeeNumber { get; set; }
 
     public DateTime? LastLoginAtUtc { get; set; }
+
+    public int? DepartmentId { get; set; }
+
+    public string? DepartmentName { get; set; }
+
+    public int? ManagerEmployeeId { get; set; }
+
+    public string? ManagerName { get; set; }
+
+    public string? Designation { get; set; }
+
+    public int? LocationId { get; set; }
+
+    public string? LocationName { get; set; }
 }
 
 public sealed class SaveAdminUserRequest
 {
-    public string? DisplayName { get; set; }
+    public IReadOnlyList<string>? Roles { get; set; }
 
-    public string? Email { get; set; }
+    public int? ManagerEmployeeId { get; set; }
 
-    public Guid? EntraObjectId { get; set; }
+    public int? DepartmentId { get; set; }
 
-    public bool IsActive { get; set; } = true;
+    public string? Designation { get; set; }
 
-    public bool AllFacilities { get; set; }
+    public int? LocationId { get; set; }
 
-    public IReadOnlyList<int> RoleIds { get; set; } = [];
-
-    public IReadOnlyList<int> FacilityIds { get; set; } = [];
-
-    public int? EmployeeId { get; set; }
+    public bool IsActive { get; set; }
 }
 
 public sealed class RoleDto

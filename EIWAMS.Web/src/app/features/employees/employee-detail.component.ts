@@ -11,10 +11,9 @@ import { ApiError } from '../../core/models/api.models';
 import { SessionService } from '../../core/services/session.service';
 import { asApiError } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS } from '../approvals/kit/ui.components';
-import { Card } from '../cards/cards.models';
 import { AccessPermission } from '../permissions/permissions.models';
 import { PermissionsService } from '../permissions/permissions.service';
-import { EmployeeDetail, EmployeeHistory } from './employees.models';
+import { Card, EmployeeDetail, EmployeeHistory } from './employees.models';
 import { EmployeesService } from './employees.service';
 
 interface TabState<T> {

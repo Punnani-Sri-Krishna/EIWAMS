@@ -1,19 +1,4 @@
-export interface DashboardSummary {
-  activeEmployees: number;
-  activeCards: number;
-  blockedCards: number;
-  pendingAccessRequests: number;
-  myPendingApprovals: number;
-  activePermissions: number;
-  permissionsExpiring7d: number;
-  eventsToday: number;
-  deniedToday: number;
-  openViolations: number;
-  openIncidents: number;
-  visitorsOnSite: number;
-  avgApprovalTurnaroundHours: number | null;
-}
-
+/** `GET v1/dashboard/home` (contract §6). Sections are null when the caller lacks the matching permission. */
 export interface HomeWorkItem {
   requestKind: 'Card' | 'Access';
   requestId: number;
@@ -34,7 +19,7 @@ export interface QueueSummary {
 }
 
 export interface HomeDashboardDto {
-  myRequests: { open: number; closed: number; recent: HomeWorkItem[] };
+  myRequests: { open: number; closed: number; recent: HomeWorkItem[] } | null;
   pendingManager: QueueSummary | null;
   pendingHr: QueueSummary | null;
   pendingSecurity: QueueSummary | null;
@@ -42,112 +27,46 @@ export interface HomeDashboardDto {
   pendingAccessReview: QueueSummary | null;
   pendingProvisioning: QueueSummary | null;
   teamRequests: QueueSummary | null;
-  reports: { cardsIssuedThisMonth: number; accessGrantedThisMonth: number; openRequests: number } | null;
 }
 
-export interface HomeCardSection {
-  key: string;
+type QueueKey = 'pendingManager' | 'pendingHr' | 'pendingSecurity' | 'pendingIdCard' | 'pendingAccessReview' | 'pendingProvisioning';
+
+/** "Waiting for you" card on Home: one per work queue the user owns. */
+export interface WaitingCard {
+  key: QueueKey;
   title: string;
   icon: string;
   route: string;
   count: number;
-  detail: string;
-  items: HomeWorkItem[];
 }
 
-/** Converts nullable API sections into user-facing cards; null sections stay hidden. */
-export function homeCardSections(home: HomeDashboardDto | null, hasEmployeeProfile: boolean): HomeCardSection[] {
+/** Queue cards in display order; routes follow the simplified navigation rather than the API's legacy paths. */
+const QUEUES: ReadonlyArray<{ key: QueueKey; title: string; icon: string; route: string }> = [
+  { key: 'pendingManager', title: 'Manager approvals', icon: 'pending_actions', route: '/approvals/manager' },
+  { key: 'pendingHr', title: 'HR verification', icon: 'fact_check', route: '/approvals/hr' },
+  { key: 'pendingSecurity', title: 'Security approvals', icon: 'shield', route: '/approvals/security' },
+  { key: 'pendingAccessReview', title: 'Access requests review', icon: 'task_alt', route: '/approvals/access' },
+  { key: 'pendingIdCard', title: 'ID cards to print and issue', icon: 'print', route: '/id-card-processing' },
+  { key: 'pendingProvisioning', title: 'Access to provision', icon: 'lock_open', route: '/permissions/provision' },
+];
+
+/**
+ * Converts the nullable queue sections into "waiting for you" cards (null sections stay hidden).
+ * `hasAccessTab` is false for plain managers, whose access decisions live in the manager tab.
+ */
+export function waitingCards(home: HomeDashboardDto | null, hasAccessTab = true): WaitingCard[] {
   if (!home) return [];
-  const sections: HomeCardSection[] = hasEmployeeProfile ? [{
-      key: 'myRequests',
-      title: 'My Requests',
-      icon: 'assignment',
-      route: '/my-requests',
-      count: home.myRequests.open,
-      detail: `${home.myRequests.closed} closed`,
-      items: home.myRequests.recent,
-    }] : [];
-  const queues: Array<[keyof Pick<HomeDashboardDto, 'pendingManager' | 'pendingHr' | 'pendingSecurity' | 'pendingIdCard' | 'pendingAccessReview' | 'pendingProvisioning' | 'teamRequests'>, string, string]> = [
-    ['pendingManager', 'Pending Manager Approvals', 'pending_actions'],
-    ['pendingHr', 'HR Verification', 'fact_check'],
-    ['pendingSecurity', 'Security Approvals', 'shield'],
-    ['pendingIdCard', 'ID Card Processing', 'badge'],
-    ['pendingAccessReview', 'Access Review', 'task_alt'],
-    ['pendingProvisioning', 'Provisioning', 'lock_open'],
-    ['teamRequests', 'Team Requests', 'groups'],
-  ];
-  for (const [key, title, icon] of queues) {
-    const queue = home[key];
-    if (queue) {
-      sections.push({
-        key,
-        title,
-        icon,
-        route: queue.route,
-        count: queue.count,
-        detail: `${queue.count} waiting`,
-        items: queue.top,
-      });
-    }
+  const cards: WaitingCard[] = [];
+  for (const q of QUEUES) {
+    const section = home[q.key];
+    if (!section) continue;
+    const route = q.key === 'pendingAccessReview' && !hasAccessTab ? '/approvals' : q.route;
+    cards.push({ key: q.key, title: q.title, icon: q.icon, route, count: section.count ?? 0 });
   }
-  if (home.reports) {
-    sections.push({
-      key: 'reports',
-      title: 'Reports',
-      icon: 'analytics',
-      route: '/reports',
-      count: home.reports.openRequests,
-      detail: `${home.reports.cardsIssuedThisMonth} cards issued · ${home.reports.accessGrantedThisMonth} access grants this month`,
-      items: [],
-    });
-  }
-  return sections;
+  return cards;
 }
 
-export interface EventsTrendPoint {
-  date: string;
-  entries: number;
-  exits: number;
-  denied: number;
-}
-
-export interface LabelCount {
-  label: string;
-  count: number;
-}
-
-export interface OccupancyItem {
-  locationId: number;
-  locationName: string;
-  onSite: number;
-}
-
-export interface MyWorkItem {
-  itemType: string;
-  referenceId: number;
-  referenceNumber: string | null;
-  title: string | null;
-  status: string | null;
-  createdAtUtc: string | null;
-  route: string | null;
-}
-
-export interface ActivityItem {
-  auditLogId: number;
-  action: string;
-  entityType: string | null;
-  entityId: string | null;
-  actorName: string | null;
-  summary: string | null;
-  occurredAtUtc: string;
-}
-
-export type KpiTone = 'primary' | 'teal' | 'violet' | 'success' | 'warning' | 'danger';
-
-export interface KpiTile {
-  label: string;
-  value: string;
-  icon: string;
-  tone: KpiTone;
-  hint?: string;
+/** Total number of items waiting for the user across all queues. */
+export function waitingTotal(cards: readonly WaitingCard[]): number {
+  return cards.reduce((sum, c) => sum + c.count, 0);
 }

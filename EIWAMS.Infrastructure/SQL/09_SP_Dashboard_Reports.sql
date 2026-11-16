@@ -169,18 +169,6 @@ BEGIN
         FROM dbo.vw_CardRequests r JOIN dbo.fn_CardEmployees(@ActorUserId) ce ON ce.EmployeeId = r.EmployeeId
         WHERE r.Status IN (N'Submitted', N'VerificationPending') AND r.RequestedByUserId <> @ActorUserId;
 
-    INSERT @w
-    SELECT N'Incident', i.IncidentId, i.IncidentNumber, i.Title, i.Status, i.OpenedAtUtc, CONCAT(N'/incidents/', i.IncidentId)
-    FROM dbo.vw_Incidents i
-    WHERE i.AssignedToUserId = @ActorUserId AND i.Status <> N'Closed';
-
-    IF dbo.fn_HasPermission(@ActorUserId, N'Visitors.Approve') = 1
-        INSERT @w
-        SELECT N'VisitorPass', p.VisitorPassId, p.PassNumber, CONCAT(N'Approve visitor pass: ', p.VisitorName, N' - ', p.LocationName), p.Status,
-               p.CreatedAtUtc, N'/visitors'
-        FROM dbo.vw_VisitorPasses p
-        WHERE p.Status = N'PendingApproval' AND p.CreatedByUserId <> @ActorUserId AND dbo.fn_UserCanAccessLocation(@ActorUserId, p.LocationId) = 1;
-
     SELECT TOP (50) ItemType, ReferenceId, ReferenceNumber, Title, Status, CreatedAtUtc, Route
     FROM @w ORDER BY CreatedAtUtc ASC;
 END
@@ -695,7 +683,7 @@ BEGIN
     END
 
     DECLARE @PendingManager NVARCHAR(MAX),@PendingHr NVARCHAR(MAX),@PendingSecurity NVARCHAR(MAX),@PendingIdCard NVARCHAR(MAX),
-            @PendingAccessReview NVARCHAR(MAX),@PendingProvisioning NVARCHAR(MAX),@TeamRequests NVARCHAR(MAX),@Reports NVARCHAR(MAX);
+            @PendingAccessReview NVARCHAR(MAX),@PendingProvisioning NVARCHAR(MAX),@TeamRequests NVARCHAR(MAX);
     IF dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1
        SELECT @PendingManager=(SELECT COUNT(*) AS count,N'/approvals/manager' AS route,
            JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
@@ -745,21 +733,11 @@ BEGIN
                        CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
                        FROM #Q WHERE Section=N'teamRequests' ORDER BY SubmittedAtUtc DESC,RequestId DESC FOR JSON PATH)) AS [top]
            FROM #Q WHERE Section=N'teamRequests' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
-    IF dbo.fn_HasPermission(@ActorUserId,N'Reports.View')=1
-       SELECT @Reports=(SELECT
-           (SELECT COUNT(*) FROM dbo.CardRequestHistory h WHERE h.ToStatus=N'Closed' AND h.CreatedAtUtc>=@MonthStart) AS cardsIssuedThisMonth,
-           (SELECT COUNT(*) FROM dbo.AccessPermissions p WHERE p.ProvisionedAtUtc>=@MonthStart) AS accessGrantedThisMonth,
-           (SELECT COUNT(*) FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
-              WHERE cr.Status NOT IN (N'Closed',N'Rejected',N'Cancelled') AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1)
-           +(SELECT COUNT(*) FROM dbo.AccessRequests ar WHERE ar.Status IN (N'Draft',N'Submitted',N'PendingApproval',N'Returned',N'Approved')
-              AND dbo.fn_UserCanAccessLocation(@ActorUserId,ar.LocationId)=1) AS openRequests
-           FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
-
     SELECT (SELECT JSON_QUERY(@MyRequests) AS myRequests,
                    JSON_QUERY(@PendingManager) AS pendingManager,JSON_QUERY(@PendingHr) AS pendingHr,
                    JSON_QUERY(@PendingSecurity) AS pendingSecurity,JSON_QUERY(@PendingIdCard) AS pendingIdCard,
                    JSON_QUERY(@PendingAccessReview) AS pendingAccessReview,JSON_QUERY(@PendingProvisioning) AS pendingProvisioning,
-                   JSON_QUERY(@TeamRequests) AS teamRequests,JSON_QUERY(@Reports) AS reports
+                   JSON_QUERY(@TeamRequests) AS teamRequests
             FOR JSON PATH,WITHOUT_ARRAY_WRAPPER,INCLUDE_NULL_VALUES) AS Json;
 END
 GO

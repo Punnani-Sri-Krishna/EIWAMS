@@ -55,6 +55,8 @@ public class EmployeeListItemDto
 
     public string WorkEmail { get; set; } = string.Empty;
 
+    public string? Designation { get; set; }
+
     public string EmployeeType { get; set; } = string.Empty;
 
     public int DepartmentId { get; set; }

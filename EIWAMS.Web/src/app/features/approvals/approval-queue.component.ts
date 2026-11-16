@@ -12,6 +12,7 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { RouterLink } from '@angular/router';
 
+import { WorkCountsService } from '../../core/services/work-counts.service';
 import { accessTypeLabel, durationLabel, stageLabel } from '../access-requests/access-requests.models';
 import { ApprovalDecision, DECISION_PAST_TENSE, PendingApproval } from './approvals.models';
 import { ApprovalsService } from './approvals.service';
@@ -137,6 +138,7 @@ import { KIT_IMPORTS } from './kit/ui.components';
 export class ApprovalQueueComponent implements OnInit {
   private readonly service = inject(ApprovalsService);
   private readonly notifier = inject(Notifier);
+  private readonly work = inject(WorkCountsService);
 
   /** Fixed stage (e.g. `Manager` in Pending Approvals); empty = stage filter (All / SecurityHead / Security / AccessControl). */
   readonly stage = input<string | null>(null);
@@ -165,6 +167,7 @@ export class ApprovalQueueComponent implements OnInit {
     this.service.decideWithPrompt(a, decision).subscribe({
       next: () => {
         this.notifier.success(`${a.requestNumber} ${DECISION_PAST_TENSE[decision]}.`);
+        this.work.refresh();
         this.list.load();
       },
       error: (err: unknown) => {

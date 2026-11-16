@@ -1,199 +1,107 @@
 <div class="page">
   <header class="page-header">
     <div>
-      <h1>{{ greeting() }}, {{ session.user()?.displayName ?? 'there' }}</h1>
-      @if (session.user()?.roles?.length) {
-        <p class="subtitle">
-          @for (role of session.user()!.roles; track role) {
-            <span class="status-chip tone-info">{{ role }}</span>
-          }
-        </p>
-      }
+      <h1>{{ greeting() }}, {{ user()?.displayName ?? 'there' }}</h1>
+      <p class="subtitle">Raise requests, follow their progress and act on work waiting for you.</p>
     </div>
     <div class="page-actions">
       <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()">
-        <mat-icon>refresh</mat-icon> Refresh
+        <mat-icon>refresh</mat-icon>Refresh
       </button>
     </div>
   </header>
 
   @if (loading()) {
-    <mat-progress-bar mode="indeterminate" aria-label="Loading dashboard" />
+    <mat-progress-bar mode="indeterminate" aria-label="Loading home" />
   }
 
-  @if (error(); as err) {
-    <div class="error-state" role="alert">
-      <mat-icon>error_outline</mat-icon>
-      <p>{{ err.message }}</p>
-      @if (err.correlationId) {
-        <p class="correlation">Reference: {{ err.correlationId }}</p>
+  <div class="home-top">
+    <section class="data-card profile-card" aria-labelledby="profile-title">
+      <h2 id="profile-title" class="visually-hidden">My details</h2>
+      <div class="profile-head">
+        @if (session.photoUrl(); as photo) {
+          <img class="avatar" [src]="photo" alt="Photo of {{ user()?.displayName }}" />
+        } @else {
+          <span class="avatar avatar-initials" aria-hidden="true">{{ initials() }}</span>
+        }
+        <div class="profile-name">
+          <strong>{{ user()?.displayName }}</strong>
+          <span>{{ user()?.designation || user()?.email }}</span>
+        </div>
+      </div>
+      @if (hasEmployee()) {
+        <dl class="profile-facts">
+          <div><dt>Employee no.</dt><dd>{{ user()?.employeeNumber || '—' }}</dd></div>
+          <div><dt>Department</dt><dd>{{ user()?.departmentName || '—' }}</dd></div>
+          <div><dt>Manager</dt><dd>{{ user()?.managerName || '—' }}</dd></div>
+          <div><dt>Location</dt><dd>{{ user()?.locationName || '—' }}</dd></div>
+        </dl>
+      } @else {
+        <p class="profile-note">Your sign-in is not linked to an employee record yet, so you cannot raise requests. Contact HR.</p>
       }
-      <button mat-flat-button type="button" (click)="load()">Try again</button>
-    </div>
-  } @else if (home(); as data) {
-    <section class="quick-actions" aria-label="Quick actions">
-      @if (hasEmployeeProfile() && session.hasPermission('Cards.Request')) {
-        <a mat-flat-button routerLink="/cards/requests/new"><mat-icon>badge</mat-icon>Raise ID card request</a>
-      }
-      @if (hasEmployeeProfile() && session.hasPermission('AccessRequests.Create')) {
-        <a mat-stroked-button routerLink="/access-requests/new"><mat-icon>vpn_key</mat-icon>Raise access request</a>
-      }
-      @if (hasEmployeeProfile() && session.hasPermission('Cards.View')) {
-        <a mat-stroked-button routerLink="/my-requests"><mat-icon>assignment</mat-icon>My requests</a>
-      }
+      <a class="home-link" routerLink="/profile">View my profile<mat-icon aria-hidden="true">arrow_forward</mat-icon></a>
     </section>
 
-    <section class="home-grid" aria-label="Requests and work queues">
-      @for (card of homeCards(); track card.key) {
-        <article class="data-card home-card">
-          <div class="home-card-heading">
-            <h2><mat-icon aria-hidden="true">{{ card.icon }}</mat-icon>{{ card.title }}</h2>
-            <span class="home-count num">{{ card.count }}</span>
-          </div>
-          <p class="home-detail">{{ card.detail }}</p>
-          @for (item of card.items; track item.requestKind + item.requestId) {
-            @if (canOpenItem(item)) {
-              <a class="home-item" [routerLink]="item.route">
-                <span class="home-item-copy">
-                  <strong>{{ item.requestNumber }}</strong>
-                  <small>{{ item.employeeName || 'You' }} · {{ item.requestType }}</small>
-                </span>
-                <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request')">
-                  <mat-icon aria-hidden="true">{{ statusIcon(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}</mat-icon>
-                  {{ statusLabel(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}
-                </span>
-              </a>
-            } @else {
-              <div class="home-item" aria-label="Request">
-                <span class="home-item-copy">
-                  <strong>{{ item.requestNumber }}</strong>
-                  <small>{{ item.employeeName || 'You' }} · {{ item.requestType }}</small>
-                </span>
-                <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request')">
-                  <mat-icon aria-hidden="true">{{ statusIcon(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}</mat-icon>
-                  {{ statusLabel(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}
-                </span>
-              </div>
-            }
-          } @empty {
-            <div class="home-empty">
-              {{ card.key === 'myRequests' ? 'No recent requests.' : card.key === 'reports' ? 'Open request count across your reporting scope.' : 'No items currently waiting.' }}
-            </div>
-          }
-          @if (card.key !== 'myRequests' || session.hasPermission('Cards.View')) {
-            <a class="home-link" [routerLink]="card.route">
-              {{ card.key === 'myRequests' ? 'View my requests' : card.key === 'reports' ? 'Open reports' : 'Open queue' }}
-              <mat-icon aria-hidden="true">arrow_forward</mat-icon>
+    @if (canRequestCard() || canRequestAccess()) {
+      <section class="actions" aria-label="Raise a request">
+        @if (canRequestCard()) {
+          <a class="action-tile" routerLink="/cards/requests/new">
+            <mat-icon aria-hidden="true">badge</mat-icon>
+            <span><strong>Request ID card</strong><small>New, replacement or lost card</small></span>
+          </a>
+        }
+        @if (canRequestAccess()) {
+          <a class="action-tile alt" routerLink="/access-requests/new">
+            <mat-icon aria-hidden="true">vpn_key</mat-icon>
+            <span><strong>Request access</strong><small>Building, floor or zone access</small></span>
+          </a>
+        }
+      </section>
+    }
+  </div>
+
+  @if (error(); as err) {
+    <eiw-error-state [error]="err" (retry)="load()" />
+  } @else if (home()) {
+    @if (waiting().length) {
+      <section class="waiting" aria-labelledby="waiting-title">
+        <h2 id="waiting-title" class="section-title">
+          Waiting for your approval: <span class="num">{{ waitingTotal() }}</span>
+        </h2>
+        <div class="waiting-grid">
+          @for (card of waiting(); track card.key) {
+            <a class="data-card waiting-card" [routerLink]="card.route" [class.has-work]="card.count > 0"
+              [attr.aria-label]="card.title + ': ' + card.count + ' waiting'">
+              <mat-icon aria-hidden="true">{{ card.icon }}</mat-icon>
+              <span class="waiting-title">{{ card.title }}</span>
+              <span class="waiting-count num">{{ card.count }}</span>
             </a>
           }
-        </article>
-      }
-    </section>
-
-    @if (canReports) {
-      @if (summary(); as s) {
-        <section class="analytics" aria-label="Analytics dashboard">
-          <h2 class="section-title"><mat-icon>analytics</mat-icon>Insights</h2>
-          <section class="kpi-grid" aria-label="Key figures">
-            @for (tile of tiles(); track tile.label) {
-              <div class="kpi-card" [class]="'kpi-card kpi-' + tile.tone">
-                <mat-icon aria-hidden="true">{{ tile.icon }}</mat-icon>
-                <div>
-                  <div class="kpi-value num">{{ tile.value }}</div>
-                  <div class="kpi-label">{{ tile.label }}</div>
-                  @if (tile.hint) { <div class="kpi-hint">{{ tile.hint }}</div> }
-                </div>
-              </div>
-            }
-          </section>
-
-          <section class="chart-grid">
-            <div class="data-card chart-card wide">
-              <h2>Access events — last 14 days</h2>
-              @if (hasTrend()) {
-                <div class="chart-box"><canvas #trendCanvas aria-label="Access events trend" role="img"></canvas></div>
-              } @else {
-                <div class="empty-state"><mat-icon>show_chart</mat-icon><p>No access events recorded yet.</p></div>
-              }
-            </div>
-            <div class="data-card chart-card">
-              <h2>Access requests by status</h2>
-              @if (hasRequests()) {
-                <div class="chart-box"><canvas #requestsCanvas aria-label="Access requests by status" role="img"></canvas></div>
-              } @else {
-                <div class="empty-state"><mat-icon>donut_large</mat-icon><p>No access requests.</p></div>
-              }
-            </div>
-            <div class="data-card chart-card">
-              <h2>Violations by type</h2>
-              @if (hasViolations()) {
-                <div class="chart-box"><canvas #violationsCanvas aria-label="Violations by type" role="img"></canvas></div>
-              } @else {
-                <div class="empty-state"><mat-icon>verified</mat-icon><p>No violations recorded.</p></div>
-              }
-            </div>
-          </section>
-
-          <section class="list-grid">
-            <div class="data-card">
-              <h2>My work</h2>
-              @for (item of myWork(); track item.itemType + item.referenceId) {
-                <a class="list-row" [routerLink]="item.route || null">
-                  <div>
-                    <div class="row-title">{{ item.title || item.itemType }}</div>
-                    <div class="row-meta">
-                      {{ item.itemType }}
-                      @if (item.referenceNumber) { · {{ item.referenceNumber }} }
-                      @if (item.createdAtUtc) { · {{ item.createdAtUtc | date: 'd MMM, HH:mm' }} }
-                    </div>
-                  </div>
-                  @if (item.status) {
-                    <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status)">
-                      <mat-icon>{{ statusIcon(item.status) }}</mat-icon>{{ item.status }}
-                    </span>
-                  }
-                </a>
-              } @empty {
-                <div class="empty-state"><mat-icon>inbox</mat-icon><p>No recent work.</p></div>
-              }
-            </div>
-
-            <div class="data-card">
-              <h2>Recent activity</h2>
-              @for (a of activity(); track a.auditLogId) {
-                <div class="list-row">
-                  <div>
-                    <div class="row-title">{{ a.summary || a.action }}</div>
-                    <div class="row-meta">
-                      {{ a.actorName || 'System' }}
-                      @if (a.entityType) { · {{ a.entityType }} {{ a.entityId }} }
-                      · {{ a.occurredAtUtc | date: 'd MMM, HH:mm' }}
-                    </div>
-                  </div>
-                </div>
-              } @empty {
-                <div class="empty-state"><mat-icon>history</mat-icon><p>No recent activity.</p></div>
-              }
-            </div>
-
-            @if (occupancy().length) {
-              <div class="data-card">
-                <h2>Occupancy</h2>
-                @for (o of occupancy(); track o.locationId) {
-                  <div class="list-row">
-                    <div class="row-title">{{ o.locationName }}</div>
-                    <span class="num">{{ o.onSite }}</span>
-                  </div>
-                }
-              </div>
-            }
-          </section>
-        </section>
-      } @else if (!loading()) {
-        <div class="empty-state"><mat-icon>analytics</mat-icon><p>Analytics are unavailable right now.</p></div>
-      }
+        </div>
+      </section>
     }
-  } @else if (!loading()) {
-    <div class="empty-state"><mat-icon>space_dashboard</mat-icon><p>No dashboard data is available.</p></div>
+
+    @if (hasEmployee()) {
+      <section class="data-card recent" aria-labelledby="recent-title">
+        <div class="recent-head">
+          <h2 id="recent-title" class="section-title">My recent requests</h2>
+          @if (canSeeMyRequests()) {
+            <a class="home-link" routerLink="/my-requests">View all<mat-icon aria-hidden="true">arrow_forward</mat-icon></a>
+          }
+        </div>
+        @for (item of recent(); track item.requestKind + item.requestId) {
+          <a class="recent-row" [routerLink]="item.route">
+            <mat-icon class="recent-icon" aria-hidden="true">{{ item.requestKind === 'Card' ? 'badge' : 'vpn_key' }}</mat-icon>
+            <span class="recent-copy">
+              <strong>{{ item.requestNumber }}</strong>
+              <small>{{ item.requestType }}@if (item.submittedAtUtc) { · {{ item.submittedAtUtc | date: 'd MMM y' }} }</small>
+            </span>
+            <eiw-status [value]="item.status" [kind]="statusKind(item)" />
+          </a>
+        } @empty {
+          <eiw-empty-state message="You have not raised any requests yet." icon="assignment" />
+        }
+      </section>
+    }
   }
 </div>

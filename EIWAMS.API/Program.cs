@@ -61,8 +61,6 @@ builder.Services.AddScoped<IIdentityRepository, IdentityRepository>();
 builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 builder.Services.AddScoped<ICardRepository, CardRepository>();
 builder.Services.AddScoped<IAccessRepository, AccessRepository>();
-builder.Services.AddScoped<ISecurityRepository, SecurityRepository>();
-builder.Services.AddScoped<IVisitorRepository, VisitorRepository>();
 builder.Services.AddScoped<IInsightsRepository, InsightsRepository>();
 builder.Services.AddScoped<IAdminRepository, AdminRepository>();
 
@@ -70,8 +68,6 @@ builder.Services.AddScoped<IIdentityService, IdentityService>();
 builder.Services.AddScoped<IEmployeeService, EmployeeService>();
 builder.Services.AddScoped<ICardService, CardService>();
 builder.Services.AddScoped<IAccessService, AccessService>();
-builder.Services.AddScoped<ISecurityService, SecurityService>();
-builder.Services.AddScoped<IVisitorService, VisitorService>();
 builder.Services.AddScoped<IInsightsService, InsightsService>();
 builder.Services.AddScoped<IAdminService, AdminService>();
 

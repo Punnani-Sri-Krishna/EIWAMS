@@ -167,7 +167,7 @@ BEGIN
         DECLARE @After NVARCHAR(MAX) = (SELECT VisitorPassId, PassNumber, VisitorName, LocationName, ValidFromUtc, ValidToUtc, Status
                                         FROM dbo.vw_VisitorPasses WHERE VisitorPassId = @Id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
         EXEC dbo.usp_Audit_Write @ActorUserId, N'VisitorPass.Created', N'VisitorPass', @Id, @Summary, NULL, @After, NULL, @CorrelationId, @IpAddress;
-        EXEC dbo.usp_Notification_CreateForRole N'FacilityAdmin', @LocationId, N'VisitorPassApproval', N'Visitor pass awaiting approval', @Summary,
+        EXEC dbo.usp_Notification_CreateForRole N'AccessControlTeam', @LocationId, N'VisitorPassApproval', N'Visitor pass awaiting approval', @Summary,
              N'VisitorPass', @Id, N'/visitors', @ActorUserId;
         COMMIT;
         EXEC dbo.usp_Internal_SelectVisitorPass @Id;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HomeDashboardDto, homeCardSections } from './dashboard.models';
+import { HomeDashboardDto, waitingCards, waitingTotal } from './dashboard.models';
 
 const home = (overrides: Partial<HomeDashboardDto> = {}): HomeDashboardDto => ({
   myRequests: { open: 2, closed: 3, recent: [] },
@@ -11,38 +11,31 @@ const home = (overrides: Partial<HomeDashboardDto> = {}): HomeDashboardDto => ({
   pendingAccessReview: null,
   pendingProvisioning: null,
   teamRequests: null,
-  reports: null,
   ...overrides,
 });
 
-describe('role dashboard sections', () => {
-  it('always shows My Requests and only includes non-null permission sections', () => {
-    const cards = homeCardSections(home({
-      pendingHr: { count: 4, route: '/approvals/hr', top: [] },
+describe('home "waiting for you" cards', () => {
+  it('shows nothing for a plain employee', () => {
+    expect(waitingCards(home())).toEqual([]);
+    expect(waitingCards(null)).toEqual([]);
+  });
+
+  it('includes only non-null queues, in workflow order, with simplified routes', () => {
+    const cards = waitingCards(home({
       pendingProvisioning: { count: 1, route: '/permissions/provision', top: [] },
-    }), true);
+      pendingIdCard: { count: 3, route: '/approvals/id-card', top: [] },
+      pendingHr: { count: 4, route: '/approvals/hr', top: [] },
+      teamRequests: { count: 9, route: '/approvals/team', top: [] },
+    }));
 
-    expect(cards.map((card) => card.key)).toEqual(['myRequests', 'pendingHr', 'pendingProvisioning']);
-    expect(cards[0]).toMatchObject({ title: 'My Requests', count: 2, detail: '3 closed' });
-    expect(cards[1]).toMatchObject({ title: 'HR Verification', count: 4, route: '/approvals/hr' });
+    expect(cards.map((c) => c.key)).toEqual(['pendingHr', 'pendingIdCard', 'pendingProvisioning']);
+    expect(cards.find((c) => c.key === 'pendingIdCard')?.route).toBe('/id-card-processing');
+    expect(waitingTotal(cards)).toBe(8);
   });
 
-  it('shows the reports section only when the reports DTO is present', () => {
-    expect(homeCardSections(home(), true).some((card) => card.key === 'reports')).toBe(false);
-    expect(homeCardSections(home({
-      reports: { cardsIssuedThisMonth: 5, accessGrantedThisMonth: 6, openRequests: 7 },
-    }), true).find((card) => card.key === 'reports')).toMatchObject({
-      route: '/reports',
-      count: 7,
-      detail: '5 cards issued · 6 access grants this month',
-    });
-  });
-
-  it('omits My Requests for users without an employee profile', () => {
-    const cards = homeCardSections(home({
-      pendingHr: { count: 1, route: '/approvals/hr', top: [] },
-    }), false);
-
-    expect(cards.map((card) => card.key)).toEqual(['pendingHr']);
+  it('sends plain managers to the approvals hub for access review', () => {
+    const h = home({ pendingAccessReview: { count: 2, route: '/approvals/access', top: [] } });
+    expect(waitingCards(h, true)[0].route).toBe('/approvals/access');
+    expect(waitingCards(h, false)[0].route).toBe('/approvals');
   });
 });

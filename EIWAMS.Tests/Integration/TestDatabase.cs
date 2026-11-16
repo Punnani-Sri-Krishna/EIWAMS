@@ -56,7 +56,9 @@ public static partial class TestDatabase
         SqlConnection.ClearAllPools();
         string scriptFolder = Path.Combine(AppContext.BaseDirectory, "SQL");
         string[] scripts = Directory.GetFiles(scriptFolder, "*.sql")
-            .Where(f => int.TryParse(Path.GetFileName(f)[..2], out int n) && n <= 12)
+            .Where(f => int.TryParse(Path.GetFileName(f)[..2], out int n)
+                        && n <= 12
+                        && !Path.GetFileName(f).Contains("DemoData", StringComparison.OrdinalIgnoreCase))
             .Order(StringComparer.Ordinal)
             .ToArray();
 

@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Text.Json;
 using EIWAMS.Application.Abstractions;
 using EIWAMS.Application.Common;
@@ -10,9 +9,6 @@ using EIWAMS.Application.Models.DTOs.Common;
 using EIWAMS.Application.Models.DTOs.Employees;
 using EIWAMS.Application.Models.DTOs.Identity;
 using EIWAMS.Application.Models.DTOs.Insights;
-using EIWAMS.Application.Models.DTOs.Security;
-using EIWAMS.Application.Models.DTOs.Visitors;
-using EIWAMS.Application.Utilities;
 using EIWAMS.Domain.Services.Interfaces;
 using EIWAMS.Domain.Workflow;
 using EIWAMS.Infrastructure.Repositories.Interfaces;
@@ -198,113 +194,13 @@ public sealed class AccessService(IAccessRepository repository, ICurrentUserAcce
         => repository.RevokeAsync(currentUser.GetActor(), permissionId, request.Reason!.Trim());
 }
 
-public sealed class SecurityService(ISecurityRepository repository, ICurrentUserAccessor currentUser, ILogger<SecurityService> logger) : ISecurityService
-{
-    public async Task<RfidIngestResultDto> IngestEventAsync(RfidEventRequest request)
-    {
-        RfidIngestResultDto result = await repository.IngestEventAsync(currentUser.GetActor(), request);
-        if (string.Equals(result.Decision, "Denied", StringComparison.OrdinalIgnoreCase) && !result.IsDuplicate)
-        {
-            // Never log the full card UID (SDD 15).
-            logger.LogWarning("RFID event {ExternalEventId} at reader {ReaderId} denied: {DenialReason}.", request.ExternalEventId, request.ReaderId, result.DenialReason);
-        }
-
-        return result;
-    }
-
-    public Task<PagedResult<AccessLogDto>> SearchAccessLogsAsync(AccessLogQuery query) => repository.SearchAccessLogsAsync(currentUser.GetActor(), query);
-
-    public Task<PagedResult<ViolationDto>> SearchViolationsAsync(ViolationQuery query) => repository.SearchViolationsAsync(currentUser.GetActor(), query);
-
-    public Task<ViolationDto> ReviewViolationAsync(long violationId, ReviewViolationRequest request)
-        => repository.ReviewViolationAsync(currentUser.GetActor(), violationId, request);
-
-    public Task<PagedResult<IncidentDto>> SearchIncidentsAsync(IncidentQuery query) => repository.SearchIncidentsAsync(currentUser.GetActor(), query);
-
-    public Task<IncidentDetailDto> GetIncidentAsync(int incidentId) => repository.GetIncidentAsync(currentUser.GetActor(), incidentId);
-
-    public Task<IncidentDetailDto> CreateIncidentAsync(CreateIncidentRequest request) => repository.CreateIncidentAsync(currentUser.GetActor(), request);
-
-    public Task<IncidentDetailDto> UpdateIncidentAsync(int incidentId, UpdateIncidentRequest request)
-        => repository.UpdateIncidentAsync(currentUser.GetActor(), incidentId, request);
-
-    public Task<PagedResult<BlacklistEntryDto>> SearchBlacklistAsync(BlacklistQuery query) => repository.SearchBlacklistAsync(currentUser.GetActor(), query);
-
-    public Task<BlacklistEntryDto> CreateBlacklistAsync(CreateBlacklistRequest request) => repository.CreateBlacklistAsync(currentUser.GetActor(), request);
-
-    public Task<BlacklistEntryDto> LiftBlacklistAsync(int blacklistId, ReasonRequest request)
-        => repository.LiftBlacklistAsync(currentUser.GetActor(), blacklistId, request.Reason!.Trim());
-}
-
-public sealed class VisitorService(IVisitorRepository repository, ICurrentUserAccessor currentUser) : IVisitorService
-{
-    public Task<PagedResult<VisitorDto>> SearchVisitorsAsync(PagedQuery query) => repository.SearchVisitorsAsync(currentUser.GetActor(), query);
-
-    public Task<VisitorDto> CreateVisitorAsync(CreateVisitorRequest request) => repository.CreateVisitorAsync(currentUser.GetActor(), request);
-
-    public Task<PagedResult<VisitorPassDto>> SearchPassesAsync(VisitorPassQuery query) => repository.SearchPassesAsync(currentUser.GetActor(), query);
-
-    public Task<VisitorPassDto> CreatePassAsync(CreateVisitorPassRequest request) => repository.CreatePassAsync(currentUser.GetActor(), request);
-
-    public Task<VisitorPassDto> TransitionPassAsync(long visitorPassId, string action, string? comments)
-    {
-        if (!VisitorPassWorkflow.AllActions.Contains(action, StringComparer.OrdinalIgnoreCase))
-        {
-            throw AppException.Validation(ApiMessages.ValidationFailed, [$"Unknown visitor pass action '{action}'."]);
-        }
-
-        if (action == VisitorPassWorkflow.Revoke && string.IsNullOrWhiteSpace(comments))
-        {
-            throw AppException.Validation(ApiMessages.ValidationFailed, ["A reason is required to revoke a pass."]);
-        }
-
-        return repository.TransitionPassAsync(currentUser.GetActor(), visitorPassId, action, string.IsNullOrWhiteSpace(comments) ? null : comments.Trim());
-    }
-}
-
 public sealed class InsightsService(IInsightsRepository repository, ICurrentUserAccessor currentUser) : IInsightsService
 {
     public Task<HomeDashboardDto> GetHomeAsync() => repository.GetHomeAsync(currentUser.GetActor());
 
-    public Task<DashboardSummaryDto> GetSummaryAsync() => repository.GetSummaryAsync(currentUser.GetActor());
-
-    public Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(int days) => repository.GetEventsTrendAsync(currentUser.GetActor(), Math.Clamp(days, 1, 90));
-
-    public Task<IReadOnlyList<LabelCountDto>> GetRequestsByStatusAsync() => repository.GetLabelCountsAsync(currentUser.GetActor(), StoredProcedures.DashboardRequestsByStatus);
-
-    public Task<IReadOnlyList<LabelCountDto>> GetViolationsByTypeAsync() => repository.GetLabelCountsAsync(currentUser.GetActor(), StoredProcedures.DashboardViolationsByType);
-
-    public Task<IReadOnlyList<LabelCountDto>> GetCardsByStatusAsync() => repository.GetLabelCountsAsync(currentUser.GetActor(), StoredProcedures.DashboardCardsByStatus);
-
-    public Task<IReadOnlyList<OccupancyDto>> GetOccupancyAsync() => repository.GetOccupancyAsync(currentUser.GetActor());
-
     public Task<IReadOnlyList<MyWorkItemDto>> GetMyWorkAsync() => repository.GetMyWorkAsync(currentUser.GetActor());
 
     public Task<IReadOnlyList<ActivityDto>> GetActivityAsync(int top) => repository.GetActivityAsync(currentUser.GetActor(), Math.Clamp(top, 1, 100));
-
-    public async Task<PagedResult<IDictionary<string, object?>>> RunReportAsync(string reportName, ReportQuery query)
-    {
-        ReportResult result = await repository.RunReportAsync(currentUser.GetActor(), ResolveReport(reportName), query, export: false);
-        string[] keys = result.Columns.Select(JsonNamingPolicy.CamelCase.ConvertName).ToArray();
-        var items = result.Rows.Select(row =>
-        {
-            IDictionary<string, object?> item = new Dictionary<string, object?>(keys.Length);
-            for (int i = 0; i < keys.Length; i++)
-            {
-                item[keys[i]] = row[i];
-            }
-
-            return item;
-        }).ToList();
-        return new PagedResult<IDictionary<string, object?>> { Items = items, TotalCount = result.TotalCount, Page = result.Page, PageSize = result.PageSize };
-    }
-
-    public async Task<(byte[] Content, string FileName)> ExportReportAsync(string reportName, ReportQuery query)
-    {
-        ReportResult result = await repository.RunReportAsync(currentUser.GetActor(), ResolveReport(reportName), query, export: true);
-        string fileName = string.Create(CultureInfo.InvariantCulture, $"{reportName.ToLowerInvariant()}-{DateTime.UtcNow:yyyyMMdd-HHmmss}.csv");
-        return (CsvWriter.Write(result.Columns, result.Rows), fileName);
-    }
 
     public Task<PagedResult<AuditLogDto>> SearchAuditAsync(AuditQuery query) => repository.SearchAuditAsync(currentUser.GetActor(), query);
 
@@ -317,29 +213,14 @@ public sealed class InsightsService(IInsightsRepository repository, ICurrentUser
 
         return repository.GetTimelineAsync(currentUser.GetActor(), query.EntityType.Trim(), query.EntityId.Trim());
     }
-
-    private static string ResolveReport(string reportName)
-        => ReportNames.ProcedureByName.TryGetValue(reportName ?? string.Empty, out string? procedure)
-            ? procedure
-            : throw AppException.NotFound(ApiMessages.NotFound);
 }
 
 public sealed class AdminService(IAdminRepository repository, ICurrentUserAccessor currentUser) : IAdminService
 {
     public Task<PagedResult<AdminUserDto>> SearchUsersAsync(AdminUserQuery query) => repository.SearchUsersAsync(currentUser.GetActor(), query);
 
-    public Task<AdminUserDto> CreateUserAsync(SaveAdminUserRequest request) => repository.SaveUserAsync(currentUser.GetActor(), null, request);
-
-    public Task<AdminUserDto> UpdateUserAsync(int userId, SaveAdminUserRequest request) => repository.SaveUserAsync(currentUser.GetActor(), userId, request);
-
-    public Task<IReadOnlyList<RoleDto>> GetRolesAsync() => repository.GetRolesAsync(currentUser.GetActor());
-
-    public Task<IReadOnlyList<RolePermissionDto>> GetRolePermissionsAsync(int roleId) => repository.GetRolePermissionsAsync(currentUser.GetActor(), roleId);
-
-    public Task<IReadOnlyList<RolePermissionDto>> SetRolePermissionsAsync(int roleId, SetRolePermissionsRequest request)
-        => repository.SetRolePermissionsAsync(currentUser.GetActor(), roleId, request.PermissionIds ?? []);
-
-    public Task<IReadOnlyList<PermissionCatalogDto>> GetPermissionCatalogAsync() => repository.GetPermissionCatalogAsync(currentUser.GetActor());
+    public Task<AdminUserDto> UpdateEmployeeAsync(int employeeId, SaveAdminUserRequest request)
+        => repository.SaveEmployeeAsync(currentUser.GetActor(), employeeId, request);
 
     public Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync() => repository.GetDepartmentsAsync(currentUser.GetActor());
 
@@ -350,16 +231,4 @@ public sealed class AdminService(IAdminRepository repository, ICurrentUserAccess
 
     public Task<LocationDto> SaveLocationAsync(int? locationId, SaveLocationRequest request)
         => repository.SaveLocationAsync(currentUser.GetActor(), locationId, request);
-
-    public Task<IReadOnlyList<ReaderDto>> GetReadersAsync() => repository.GetReadersAsync(currentUser.GetActor());
-
-    public Task<ReaderDto> CreateReaderAsync(SaveReaderRequest request)
-        => repository.SaveReaderAsync(currentUser.GetActor(), true, request.ReaderId!, request);
-
-    public Task<ReaderDto> UpdateReaderAsync(string readerId, SaveReaderRequest request)
-        => repository.SaveReaderAsync(currentUser.GetActor(), false, readerId, request);
-
-    public Task<IReadOnlyList<SettingDto>> GetSettingsAsync() => repository.GetSettingsAsync(currentUser.GetActor());
-
-    public Task<IReadOnlyList<SettingDto>> UpdateSettingAsync(UpdateSettingRequest request) => repository.UpdateSettingAsync(currentUser.GetActor(), request);
 }

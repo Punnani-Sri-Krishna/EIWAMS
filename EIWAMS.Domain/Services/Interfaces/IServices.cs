@@ -6,8 +6,6 @@ using EIWAMS.Application.Models.DTOs.Common;
 using EIWAMS.Application.Models.DTOs.Employees;
 using EIWAMS.Application.Models.DTOs.Identity;
 using EIWAMS.Application.Models.DTOs.Insights;
-using EIWAMS.Application.Models.DTOs.Security;
-using EIWAMS.Application.Models.DTOs.Visitors;
 
 namespace EIWAMS.Domain.Services.Interfaces;
 
@@ -115,67 +113,13 @@ public interface IAccessService
     Task<AccessPermissionDto> RevokeAsync(long permissionId, ReasonRequest request);
 }
 
-public interface ISecurityService
-{
-    Task<RfidIngestResultDto> IngestEventAsync(RfidEventRequest request);
-
-    Task<PagedResult<AccessLogDto>> SearchAccessLogsAsync(AccessLogQuery query);
-
-    Task<PagedResult<ViolationDto>> SearchViolationsAsync(ViolationQuery query);
-
-    Task<ViolationDto> ReviewViolationAsync(long violationId, ReviewViolationRequest request);
-
-    Task<PagedResult<IncidentDto>> SearchIncidentsAsync(IncidentQuery query);
-
-    Task<IncidentDetailDto> GetIncidentAsync(int incidentId);
-
-    Task<IncidentDetailDto> CreateIncidentAsync(CreateIncidentRequest request);
-
-    Task<IncidentDetailDto> UpdateIncidentAsync(int incidentId, UpdateIncidentRequest request);
-
-    Task<PagedResult<BlacklistEntryDto>> SearchBlacklistAsync(BlacklistQuery query);
-
-    Task<BlacklistEntryDto> CreateBlacklistAsync(CreateBlacklistRequest request);
-
-    Task<BlacklistEntryDto> LiftBlacklistAsync(int blacklistId, ReasonRequest request);
-}
-
-public interface IVisitorService
-{
-    Task<PagedResult<VisitorDto>> SearchVisitorsAsync(PagedQuery query);
-
-    Task<VisitorDto> CreateVisitorAsync(CreateVisitorRequest request);
-
-    Task<PagedResult<VisitorPassDto>> SearchPassesAsync(VisitorPassQuery query);
-
-    Task<VisitorPassDto> CreatePassAsync(CreateVisitorPassRequest request);
-
-    Task<VisitorPassDto> TransitionPassAsync(long visitorPassId, string action, string? comments);
-}
-
 public interface IInsightsService
 {
     Task<HomeDashboardDto> GetHomeAsync();
 
-    Task<DashboardSummaryDto> GetSummaryAsync();
-
-    Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(int days);
-
-    Task<IReadOnlyList<LabelCountDto>> GetRequestsByStatusAsync();
-
-    Task<IReadOnlyList<LabelCountDto>> GetViolationsByTypeAsync();
-
-    Task<IReadOnlyList<LabelCountDto>> GetCardsByStatusAsync();
-
-    Task<IReadOnlyList<OccupancyDto>> GetOccupancyAsync();
-
     Task<IReadOnlyList<MyWorkItemDto>> GetMyWorkAsync();
 
     Task<IReadOnlyList<ActivityDto>> GetActivityAsync(int top);
-
-    Task<PagedResult<IDictionary<string, object?>>> RunReportAsync(string reportName, ReportQuery query);
-
-    Task<(byte[] Content, string FileName)> ExportReportAsync(string reportName, ReportQuery query);
 
     Task<PagedResult<AuditLogDto>> SearchAuditAsync(AuditQuery query);
 
@@ -186,17 +130,7 @@ public interface IAdminService
 {
     Task<PagedResult<AdminUserDto>> SearchUsersAsync(AdminUserQuery query);
 
-    Task<AdminUserDto> CreateUserAsync(SaveAdminUserRequest request);
-
-    Task<AdminUserDto> UpdateUserAsync(int userId, SaveAdminUserRequest request);
-
-    Task<IReadOnlyList<RoleDto>> GetRolesAsync();
-
-    Task<IReadOnlyList<RolePermissionDto>> GetRolePermissionsAsync(int roleId);
-
-    Task<IReadOnlyList<RolePermissionDto>> SetRolePermissionsAsync(int roleId, SetRolePermissionsRequest request);
-
-    Task<IReadOnlyList<PermissionCatalogDto>> GetPermissionCatalogAsync();
+    Task<AdminUserDto> UpdateEmployeeAsync(int employeeId, SaveAdminUserRequest request);
 
     Task<IReadOnlyList<DepartmentDto>> GetDepartmentsAsync();
 
@@ -205,14 +139,4 @@ public interface IAdminService
     Task<IReadOnlyList<LocationDto>> GetLocationsAsync();
 
     Task<LocationDto> SaveLocationAsync(int? locationId, SaveLocationRequest request);
-
-    Task<IReadOnlyList<ReaderDto>> GetReadersAsync();
-
-    Task<ReaderDto> CreateReaderAsync(SaveReaderRequest request);
-
-    Task<ReaderDto> UpdateReaderAsync(string readerId, SaveReaderRequest request);
-
-    Task<IReadOnlyList<SettingDto>> GetSettingsAsync();
-
-    Task<IReadOnlyList<SettingDto>> UpdateSettingAsync(UpdateSettingRequest request);
 }

@@ -12,9 +12,10 @@ import { filter } from 'rxjs';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { PagedResult } from '../../core/models/api.models';
+import { NavEntry, buildNav } from '../../core/navigation/nav';
 import { ApiService } from '../../core/services/api.service';
 import { SessionService } from '../../core/services/session.service';
-import { MenuSection, groupMenu } from './menu-grouping';
+import { WorkCountsService } from '../../core/services/work-counts.service';
 
 export interface ShellNotification {
   notificationId: number;
@@ -27,6 +28,16 @@ export interface ShellNotification {
 }
 
 const POLL_MS = 60_000;
+
+/** Role labels shown in the avatar menu (internal role codes stay in the API). */
+const ROLE_LABELS: Record<string, string> = {
+  HRAdmin: 'HR',
+  SecurityHead: 'Security Head',
+  SecurityTeam: 'Security',
+  IdCardTeam: 'ID Card Team',
+  AccessControlTeam: 'Access Control',
+  SystemAdmin: 'System Admin',
+};
 
 @Component({
   selector: 'app-shell',
@@ -43,10 +54,16 @@ export class ShellComponent implements OnInit {
   private readonly auth = inject(AuthService);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly work = inject(WorkCountsService);
   readonly session = inject(SessionService);
 
-  readonly sections = computed(() => groupMenu(this.session.menu()));
   readonly user = this.session.user;
+  readonly nav = computed<NavEntry[]>(() => {
+    const u = this.user();
+    const perms = new Set(u?.permissions ?? []);
+    return buildNav({ has: (p) => perms.has(p), roles: u?.roles ?? [] });
+  });
+  readonly roleText = computed(() => (this.user()?.roles ?? []).map((r) => ROLE_LABELS[r] ?? r).join(', '));
   readonly initials = computed(() =>
     (this.user()?.displayName ?? '?').split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]!.toUpperCase()).join(''),
   );
@@ -54,10 +71,11 @@ export class ShellComponent implements OnInit {
   readonly currentUrl = signal(this.router.url);
   readonly unread = signal(0);
   readonly notifications = signal<ShellNotification[]>([]);
+  private readonly hasWorkQueues = computed(() => this.nav().some((e) => e.badge?.length));
 
   ngOnInit(): void {
-    this.refreshUnread();
-    const timer = setInterval(() => this.refreshUnread(), POLL_MS);
+    this.refresh();
+    const timer = setInterval(() => this.refresh(), POLL_MS);
     this.destroyRef.onDestroy(() => clearInterval(timer));
     this.router.events
       .pipe(filter((e) => e instanceof NavigationEnd), takeUntilDestroyed(this.destroyRef))
@@ -67,20 +85,25 @@ export class ShellComponent implements OnInit {
       });
   }
 
-  sectionActive(s: MenuSection): boolean {
-    const url = this.currentUrl().split(/[?#]/)[0];
-    return s.items.some((i) => {
-      const target = this.link(i.route);
-      return url === target || url.startsWith(target + '/');
-    });
+  badge(entry: NavEntry): number {
+    return this.work.total(entry.badge);
   }
 
-  link(route: string): string {
-    return '/' + (route ?? '').replace(/^\/+/, '');
+  /** Dropdown sections are active when the current URL is below one of their links. */
+  entryActive(entry: NavEntry): boolean {
+    const url = this.currentUrl().split(/[?#]/)[0];
+    return (entry.children ?? []).some((c) => url === c.route || url.startsWith(c.route + '/'));
   }
 
   toggleMobile(): void {
     this.mobileOpen.update((v) => !v);
+  }
+
+  refresh(): void {
+    this.refreshUnread();
+    if (this.hasWorkQueues()) {
+      this.work.refresh();
+    }
   }
 
   refreshUnread(): void {
@@ -118,6 +141,7 @@ export class ShellComponent implements OnInit {
   }
 
   async signOut(): Promise<void> {
+    this.work.clear();
     await this.auth.signOut();
     await this.router.navigateByUrl('/login');
   }

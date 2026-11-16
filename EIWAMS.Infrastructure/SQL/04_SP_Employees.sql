@@ -87,9 +87,9 @@ CREATE OR ALTER PROCEDURE dbo.usp_Internal_ValidateEmployeeRefs
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentId = @DepartmentId AND IsActive = 1)
+    IF @DepartmentId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Departments WHERE DepartmentId = @DepartmentId AND IsActive = 1)
         THROW 50400, N'The department does not exist or is inactive.', 1;
-    IF NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @LocationId AND IsActive = 1)
+    IF @LocationId IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @LocationId AND IsActive = 1)
         THROW 50400, N'The location does not exist or is inactive.', 1;
     IF @ManagerEmployeeId IS NOT NULL
     BEGIN
@@ -318,7 +318,7 @@ BEGIN
         EXEC dbo.usp_Notification_Create @EmpUser, N'EmployeeTransferred', N'You have been transferred', @Summary, N'Employee', @EmployeeId, @Route, @ActorUserId;
         EXEC dbo.usp_Notification_Create @MgrUser, N'EmployeeTransferred', N'Team member transferred', @Summary, N'Employee', @EmployeeId, @Route, @ActorUserId;
         IF @SuspendedCount > 0
-            EXEC dbo.usp_Notification_CreateForRole N'FacilityAdmin', @LocationId, N'PermissionsSuspended', N'Permissions suspended after transfer',
+            EXEC dbo.usp_Notification_CreateForRole N'AccessControlTeam', @LocationId, N'PermissionsSuspended', N'Permissions suspended after transfer',
                  @Summary, N'Employee', @EmployeeId, @Route, @ActorUserId;
         COMMIT;
 

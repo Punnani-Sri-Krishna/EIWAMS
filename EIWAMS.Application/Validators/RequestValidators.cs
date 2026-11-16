@@ -382,12 +382,34 @@ public sealed class CreateVisitorPassRequestValidator : AbstractValidator<Create
 
 public sealed class SaveAdminUserRequestValidator : AbstractValidator<SaveAdminUserRequest>
 {
+    private static readonly HashSet<string> AllowedRoles = new(StringComparer.Ordinal)
+    {
+        "Employee",
+        "Manager",
+        "HRAdmin",
+        "SecurityHead",
+        "SecurityTeam",
+        "IdCardTeam",
+        "AccessControlTeam",
+        "SystemAdmin",
+    };
+
     public SaveAdminUserRequestValidator()
     {
-        RuleFor(x => x.DisplayName).RequiredText("displayName", 150);
-        RuleFor(x => x.Email).RequiredText("email", 256).EmailAddress().WithMessage("'email' must be a valid email address.");
-        RuleFor(x => x.RoleIds).NotNull().Must(r => r.All(id => id > 0)).WithMessage("'roleIds' must contain valid role ids.");
-        RuleFor(x => x.FacilityIds).NotNull().Must(r => r.All(id => id > 0)).WithMessage("'facilityIds' must contain valid location ids.");
+        RuleFor(x => x.Roles)
+            .NotNull().WithMessage("'roles' is required.")
+            .Must(roles => roles is not null
+                && roles.Contains("Employee", StringComparer.Ordinal)
+                && roles.All(role => AllowedRoles.Contains(role))
+                && roles.Distinct(StringComparer.Ordinal).Count() == roles.Count)
+            .WithMessage("'roles' must contain unique supported role names and include 'Employee'.");
+        RuleFor(x => x.ManagerEmployeeId).GreaterThan(0).When(x => x.ManagerEmployeeId.HasValue)
+            .WithMessage("'managerEmployeeId' must be greater than zero.");
+        RuleFor(x => x.DepartmentId).GreaterThan(0).When(x => x.DepartmentId.HasValue)
+            .WithMessage("'departmentId' must be greater than zero.");
+        RuleFor(x => x.LocationId).GreaterThan(0).When(x => x.LocationId.HasValue)
+            .WithMessage("'locationId' must be greater than zero.");
+        RuleFor(x => x.Designation).MaximumLength(150);
     }
 }
 

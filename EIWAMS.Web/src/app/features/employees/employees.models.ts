@@ -66,3 +66,23 @@ export interface DeactivateEmployeeRequest {
 }
 
 export const DEACTIVATION_STATUSES = ['Exited', 'Inactive'];
+
+/** Card row of `GET v1/employees/{id}/cards` (contract §6 Card). */
+export interface Card {
+  cardId: number;
+  maskedCardUid: string;
+  employeeId: number;
+  employeeNumber: string | null;
+  employeeName: string | null;
+  cardType: string;
+  status: string;
+  issuedAtUtc: string | null;
+  activatedAtUtc: string | null;
+  expiresAtUtc: string | null;
+  blockedAtUtc: string | null;
+  blockReason: string | null;
+  controllerSyncStatus: string | null;
+  replacedByCardId: number | null;
+  cardRequestId: number | null;
+  version: string | null;
+}
