@@ -2,6 +2,7 @@ import { Injectable, computed, inject, signal } from '@angular/core';
 import { Observable, tap } from 'rxjs';
 
 import { CurrentUser, MenuItem } from '../models/api.models';
+import { toDataUrl } from '../../shared/utils/image-resize';
 import { ApiService } from './api.service';
 
 /** Holds the signed-in user's profile, permissions and menu (database driven). */
@@ -11,6 +12,8 @@ export class SessionService {
 
   readonly user = signal<CurrentUser | null>(null);
   readonly menu = signal<MenuItem[]>([]);
+  /** `data:` URL of the user's photo for the app bar avatar (null = show initials). */
+  readonly photoUrl = signal<string | null>(null);
   readonly isSignedIn = computed(() => this.user() !== null);
   private readonly permissionSet = computed(() => new Set(this.user()?.permissions ?? []));
 
@@ -27,15 +30,40 @@ export class SessionService {
   }
 
   loadProfile(): Observable<CurrentUser> {
-    return this.api.get<CurrentUser>('v1/me').pipe(tap((u) => this.user.set(u)));
+    return this.api.get<CurrentUser>('v1/me').pipe(
+      tap((u) => {
+        this.user.set(u);
+        this.refreshPhoto();
+      }),
+    );
   }
 
   loadMenu(): Observable<MenuItem[]> {
     return this.api.get<MenuItem[]>('v1/me/menu').pipe(tap((m) => this.menu.set(m ?? [])));
   }
 
+  /** Loads the avatar photo (v1/me/photo) when the user has one; failures fall back to initials. */
+  refreshPhoto(): void {
+    if (!this.user()?.hasPhoto) {
+      this.photoUrl.set(null);
+      return;
+    }
+    this.api.get<{ contentType: string; photoBase64: string }>('v1/me/photo').subscribe({
+      next: (p) => this.photoUrl.set(toDataUrl(p?.contentType, p?.photoBase64)),
+      error: () => this.photoUrl.set(null),
+    });
+  }
+
+  /** Updates the cached avatar after a successful upload. */
+  setPhoto(dataUrl: string | null): void {
+    this.photoUrl.set(dataUrl);
+    const u = this.user();
+    if (u && dataUrl) this.user.set({ ...u, hasPhoto: true });
+  }
+
   clear(): void {
     this.user.set(null);
     this.menu.set([]);
+    this.photoUrl.set(null);
   }
 }

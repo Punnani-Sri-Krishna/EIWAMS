@@ -127,19 +127,12 @@ BEGIN
             THROW 50409, N'This card UID is already registered.', 1;
         IF @CardRequestId IS NOT NULL
         BEGIN
-            DECLARE @CrStatus NVARCHAR(30), @CrEmp INT;
-            SELECT @CrStatus = Status, @CrEmp = EmployeeId FROM dbo.CardRequests WITH (UPDLOCK) WHERE CardRequestId = @CardRequestId;
-            IF @CrStatus IS NULL THROW 50404, N'Card request not found.', 1;
-            IF @CrEmp <> @EmployeeId THROW 50400, N'The card request belongs to another employee.', 1;
-            IF @CrStatus <> N'Approved' THROW 50409, N'Only approved card requests can be fulfilled.', 1;
+            THROW 50409, N'Card requests must be fulfilled through the v2 card-request workflow.', 1;
         END
 
         INSERT dbo.RFIDCards (CardUid, EmployeeId, CardType, Status, ExpiresAtUtc, CardRequestId, CreatedByUserId)
         VALUES (@CardUid, @EmployeeId, @CardType, N'Requested', @ExpiresAtUtc, @CardRequestId, @ActorUserId);
         DECLARE @Id BIGINT = SCOPE_IDENTITY();
-
-        IF @CardRequestId IS NOT NULL
-            UPDATE dbo.CardRequests SET Status = N'Issued', NewCardId = @Id WHERE CardRequestId = @CardRequestId;
 
         DECLARE @After NVARCHAR(MAX) = (SELECT CardId, MaskedCardUid, EmployeeNumber, CardType, Status, ExpiresAtUtc, CardRequestId
                                         FROM dbo.vw_Cards WHERE CardId = @Id FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
@@ -298,7 +291,7 @@ BEGIN
 END
 GO
 
--- BR-03: the card is blocked immediately and a Lost card request is raised for replacement.
+-- BR-03: reporting a lost card blocks it immediately; requests are raised through v1/card-requests.
 CREATE OR ALTER PROCEDURE dbo.usp_Card_ReportLost
     @ActorUserId   INT,
     @CardId        BIGINT,
@@ -325,17 +318,7 @@ BEGIN
         END
 
         BEGIN TRAN;
-        EXEC dbo.usp_Internal_CardChangeStatus @ActorUserId, @CardId, N'Lost', @Reason, NULL, @CorrelationId, @IpAddress;
-
-        DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_CardRequestNumber;
-        DECLARE @Number NVARCHAR(20) = CONCAT(N'CR-', YEAR(SYSUTCDATETIME()), N'-', RIGHT(CONCAT(N'00000', @Seq), 5));
-        INSERT dbo.CardRequests (RequestNumber, RequestType, EmployeeId, OldCardId, Reason, Status, RequestedByUserId)
-        VALUES (@Number, N'Lost', @EmpId, @CardId, @Reason, N'Submitted', @ActorUserId);
-        DECLARE @CrId BIGINT = SCOPE_IDENTITY();
-        DECLARE @Summary NVARCHAR(500) = CONCAT(N'Card request ', @Number, N' (Lost) raised for replacement.');
-        EXEC dbo.usp_Audit_Write @ActorUserId, N'CardRequest.Created', N'CardRequest', @CrId, @Summary, NULL, NULL, @Reason, @CorrelationId, @IpAddress;
-        EXEC dbo.usp_Notification_CreateForRole N'SecurityTeam', @LocId, N'CardRequestSubmitted', N'Lost card reported', @Summary,
-             N'CardRequest', @CrId, N'/cards', @ActorUserId;
+        EXEC dbo.usp_Internal_CardChangeStatus @ActorUserId, @CardId, N'Blocked', @Reason, NULL, @CorrelationId, @IpAddress;
         COMMIT;
         EXEC dbo.usp_Internal_SelectCard @CardId;
     END TRY
@@ -396,22 +379,7 @@ BEGIN
         UPDATE dbo.RFIDCards SET ControllerSyncStatus = @sync WHERE CardId = @NewId;
         UPDATE dbo.RFIDCards SET ReplacedByCardId = @NewId, UpdatedAtUtc = SYSUTCDATETIME(), UpdatedByUserId = @ActorUserId WHERE CardId = @CardId;
 
-        -- Close any open Lost/Damaged/Replacement request for the old card; otherwise record the replacement as an issued request.
-        DECLARE @CrId BIGINT = (SELECT TOP (1) CardRequestId FROM dbo.CardRequests
-                                WHERE OldCardId = @CardId AND Status IN (N'Submitted', N'VerificationPending', N'Approved') ORDER BY CardRequestId DESC);
-        IF @CrId IS NOT NULL
-            UPDATE dbo.CardRequests SET Status = N'Issued', NewCardId = @NewId,
-                   ApprovedByUserId = ISNULL(ApprovedByUserId, @ActorUserId), DecidedAtUtc = ISNULL(DecidedAtUtc, SYSUTCDATETIME())
-            WHERE CardRequestId = @CrId;
-        ELSE
-        BEGIN
-            DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_CardRequestNumber;
-            INSERT dbo.CardRequests (RequestNumber, RequestType, EmployeeId, OldCardId, NewCardId, Reason, Status, RequestedByUserId, ApprovedByUserId, DecidedAtUtc)
-            VALUES (CONCAT(N'CR-', YEAR(SYSUTCDATETIME()), N'-', RIGHT(CONCAT(N'00000', @Seq), 5)), N'Replacement', @EmpId, @CardId, @NewId, @Reason,
-                    N'Issued', @ActorUserId, @ActorUserId, SYSUTCDATETIME());
-            SET @CrId = SCOPE_IDENTITY();
-        END
-        UPDATE dbo.RFIDCards SET CardRequestId = @CrId WHERE CardId = @NewId;
+        -- Direct replacement is an admin card operation, not a bypass for a pending v2 request.
 
         DECLARE @Summary NVARCHAR(500) = CONCAT(N'Card ', dbo.fn_MaskCardUid(@OldUid), N' replaced by ', dbo.fn_MaskCardUid(@NewCardUid), N'.');
         DECLARE @Before NVARCHAR(MAX) = (SELECT @CardId AS cardId, @Status AS status FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
@@ -436,6 +404,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_CardRequest_Search
     @RequestType NVARCHAR(20) = NULL,
     @EmployeeId  INT = NULL,
     @Search      NVARCHAR(200) = NULL,
+    @Mine        BIT = NULL,
     @Page        INT = 1,
     @PageSize    INT = 20
 AS
@@ -445,12 +414,16 @@ BEGIN
     IF @Page < 1 SET @Page = 1;
     IF @PageSize < 1 SET @PageSize = 20;
     IF @PageSize > 100 SET @PageSize = 100;
+    DECLARE @CanViewAll BIT = CASE WHEN dbo.fn_HasPermission(@ActorUserId, N'Cards.ViewAll') = 1 THEN 1 ELSE 0 END;
 
     CREATE TABLE #f (CardRequestId BIGINT PRIMARY KEY);
     INSERT #f
     SELECT r.CardRequestId
     FROM dbo.vw_CardRequests r
-    WHERE (r.RequestedByUserId = @ActorUserId OR r.EmployeeId IN (SELECT EmployeeId FROM dbo.fn_CardEmployees(@ActorUserId)))
+    WHERE (r.RequestedByUserId = @ActorUserId OR r.EmployeeUserId = @ActorUserId
+           OR (@CanViewAll = 1 AND dbo.fn_UserCanAccessLocation(@ActorUserId, r.EmployeeLocationId) = 1))
+      AND (@CanViewAll = 1 OR r.RequestedByUserId = @ActorUserId OR r.EmployeeUserId = @ActorUserId)
+      AND (ISNULL(@Mine, 0) = 0 OR r.RequestedByUserId = @ActorUserId OR r.EmployeeUserId = @ActorUserId)
       AND (@Status IS NULL OR r.Status = @Status)
       AND (@RequestType IS NULL OR r.RequestType = @RequestType)
       AND (@EmployeeId IS NULL OR r.EmployeeId = @EmployeeId)
@@ -459,8 +432,10 @@ BEGIN
 
     SELECT COUNT(*) AS TotalCount FROM #f;
 
-    SELECT r.CardRequestId, r.RequestNumber, r.RequestType, r.EmployeeId, r.EmployeeName, r.EmployeeNumber, r.OldCardId, r.NewCardId, r.Reason,
-           r.Status, r.RequestedAtUtc, r.RequestedByName, r.VerifiedByName, r.ApprovedByName, r.DecidedAtUtc, r.DecisionComments, r.RequestedValidToUtc
+    SELECT r.CardRequestId, r.RequestNumber, r.RequestType, r.EmployeeId, r.EmployeeName, r.EmployeeNumber, r.Designation,
+           r.DepartmentName, r.ManagerName, r.OldCardId, r.OldMaskedCardUid, r.NewCardId, r.NewMaskedCardUid, r.Reason,
+           r.Status, r.CurrentStage, r.RequestedByUserId, r.RequestedAtUtc, r.RequestedByName, r.UpdatedAtUtc, r.ClosedAtUtc,
+           r.LastActionByName, r.LastActionAtUtc, r.LastComments, r.HasPhoto, r.Version
     FROM dbo.vw_CardRequests r JOIN #f f ON f.CardRequestId = r.CardRequestId
     ORDER BY r.RequestedAtUtc DESC, r.CardRequestId DESC
     OFFSET (@Page - 1) * @PageSize ROWS FETCH NEXT @PageSize ROWS ONLY;
@@ -594,6 +569,303 @@ BEGIN
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END
+GO
+
+/* v2 procedures deliberately replace the legacy two-stage request flow above. */
+CREATE OR ALTER PROCEDURE dbo.usp_CardRequest_Queue
+    @ActorUserId INT,
+    @Stage NVARCHAR(20),
+    @Search NVARCHAR(200) = NULL,
+    @Page INT = 1,
+    @PageSize INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF @Stage NOT IN (N'Manager',N'HR',N'Security',N'IdCardTeam') THROW 50400, N'Invalid card request stage.', 1;
+    IF NOT EXISTS (SELECT 1 FROM dbo.fn_UserPermissions(@ActorUserId) WHERE PermissionCode =
+        CASE @Stage WHEN N'Manager' THEN N'Cards.ManagerApprove' WHEN N'HR' THEN N'Cards.HrVerify'
+                    WHEN N'Security' THEN N'Cards.SecurityReview' ELSE N'Cards.Process' END)
+        THROW 50403, N'You are not authorized for this queue.', 1;
+    IF @Page < 1 SET @Page = 1;
+    IF @PageSize < 1 SET @PageSize = 20;
+    IF @PageSize > 100 SET @PageSize = 100;
+    SET @Search = NULLIF(LTRIM(RTRIM(@Search)), N'');
+    CREATE TABLE #q (CardRequestId BIGINT PRIMARY KEY);
+    INSERT #q
+    SELECT r.CardRequestId FROM dbo.vw_CardRequests r
+    WHERE r.Status = CASE @Stage WHEN N'Manager' THEN N'PendingManager' WHEN N'HR' THEN N'PendingHR'
+        WHEN N'Security' THEN N'PendingSecurity' ELSE r.Status END
+      AND (@Stage <> N'IdCardTeam' OR r.Status IN (N'PendingIdCardTeam',N'Printing',N'ReadyToIssue'))
+      AND NOT (r.RequestedByUserId = @ActorUserId OR r.EmployeeUserId = @ActorUserId)
+      AND dbo.fn_UserCanAccessLocation(@ActorUserId, r.EmployeeLocationId) = 1
+      AND (@Search IS NULL OR r.RequestNumber LIKE N'%' + @Search + N'%' OR r.EmployeeName LIKE N'%' + @Search + N'%'
+           OR r.EmployeeNumber LIKE N'%' + @Search + N'%')
+      AND (@Stage <> N'Manager' OR r.ManagerUserId = @ActorUserId OR (r.ManagerUserId IS NULL AND
+           (dbo.fn_HasPermission(@ActorUserId, N'Cards.ManagerApprove') = 1
+            OR EXISTS (SELECT 1 FROM dbo.UserRoles ur JOIN dbo.Roles ro ON ro.RoleId = ur.RoleId
+                       WHERE ur.UserId = @ActorUserId AND ro.RoleName = N'SystemAdmin'))));
+    SELECT COUNT(*) AS TotalCount FROM #q;
+    SELECT r.CardRequestId, r.RequestNumber, r.RequestType, r.EmployeeId, r.EmployeeName, r.EmployeeNumber, r.Designation,
+           r.DepartmentName, r.ManagerName, r.OldCardId, r.OldMaskedCardUid, r.NewCardId, r.NewMaskedCardUid, r.Reason,
+           r.Status, r.CurrentStage, r.RequestedByUserId, r.RequestedAtUtc, r.RequestedByName, r.UpdatedAtUtc, r.ClosedAtUtc,
+           r.LastActionByName, r.LastActionAtUtc, r.LastComments, r.HasPhoto, r.Version
+    FROM dbo.vw_CardRequests r JOIN #q q ON q.CardRequestId = r.CardRequestId
+    ORDER BY r.RequestedAtUtc, r.CardRequestId
+    OFFSET (@Page - 1) * @PageSize ROWS FETCH NEXT @PageSize ROWS ONLY;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_CardRequest_Get
+    @ActorUserId INT,
+    @CardRequestId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @LocationId INT, @ActorEmployeeId INT, @OwnerUserId INT, @RequesterUserId INT;
+    SELECT @ActorEmployeeId=EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId;
+    SELECT @LocationId = r.EmployeeLocationId, @OwnerUserId=r.EmployeeUserId, @RequesterUserId=r.RequestedByUserId FROM dbo.vw_CardRequests r
+    WHERE r.CardRequestId = @CardRequestId
+      AND (r.EmployeeUserId = @ActorUserId OR r.RequestedByUserId = @ActorUserId
+           OR r.ManagerUserId = @ActorUserId
+           OR (dbo.fn_HasPermission(@ActorUserId, N'Cards.ViewAll') = 1 AND dbo.fn_UserCanAccessLocation(@ActorUserId, r.EmployeeLocationId) = 1)
+           OR (dbo.fn_HasPermission(@ActorUserId, N'Cards.HrVerify') = 1)
+           OR (dbo.fn_HasPermission(@ActorUserId, N'Cards.SecurityReview') = 1)
+           OR (dbo.fn_HasPermission(@ActorUserId, N'Cards.Process') = 1)
+           OR (dbo.fn_HasPermission(@ActorUserId,N'Approvals.Team')=1 AND r.ManagerEmployeeId=@ActorEmployeeId)
+           OR EXISTS (SELECT 1 FROM dbo.UserRoles ur JOIN dbo.Roles ro ON ro.RoleId = ur.RoleId
+                      WHERE ur.UserId = @ActorUserId AND ro.RoleName = N'SystemAdmin'));
+    IF @LocationId IS NULL THROW 50404, N'Card request not found.', 1;
+    IF @ActorUserId NOT IN (ISNULL(@OwnerUserId,-1),ISNULL(@RequesterUserId,-1))
+       AND dbo.fn_UserCanAccessLocation(@ActorUserId,@LocationId)=0
+        THROW 50404, N'Card request not found.', 1;
+    SELECT r.CardRequestId, r.RequestNumber, r.RequestType, r.EmployeeId, r.EmployeeName, r.EmployeeNumber, r.Designation,
+           r.DepartmentName, r.ManagerName, r.WorkEmail, r.LocationName, r.OldCardId, r.OldMaskedCardUid, r.NewCardId,
+           r.NewMaskedCardUid, r.Reason, r.Status, r.CurrentStage, r.RequestedByUserId, r.RequestedByName,
+           r.RequestedAtUtc, r.UpdatedAtUtc, r.ClosedAtUtc, r.LastActionByName, r.LastActionAtUtc, r.LastComments, r.HasPhoto,
+           r.MobileNumber, r.Address, r.BloodGroup, r.EmergencyContactName, r.EmergencyContactNumber, r.Version
+    FROM dbo.vw_CardRequests r WHERE r.CardRequestId = @CardRequestId;
+    SELECT h.HistoryId, h.FromStatus, h.ToStatus, h.Action, h.Comments, h.ActorUserId, u.DisplayName AS ActorName, h.CreatedAtUtc
+    FROM dbo.CardRequestHistory h LEFT JOIN dbo.Users u ON u.UserId = h.ActorUserId
+    WHERE h.CardRequestId = @CardRequestId ORDER BY h.CreatedAtUtc, h.HistoryId;
+    DECLARE @Status NVARCHAR(30), @EmployeeUserId INT, @Requester INT, @ManagerUserId INT;
+    SELECT @Status = r.Status, @EmployeeUserId = r.EmployeeUserId, @Requester = r.RequestedByUserId, @ManagerUserId = r.ManagerUserId
+    FROM dbo.vw_CardRequests r WHERE r.CardRequestId = @CardRequestId;
+    SELECT v.ActionName AS Value
+    FROM (VALUES (1,N'Approve',N'PendingManager'),(1,N'Verify',N'PendingHR'),(1,N'Approve',N'PendingSecurity'),
+                 (1,N'Approve',N'PendingIdCardTeam'),(1,N'MarkPrinted',N'Printing'),(1,N'Issue',N'ReadyToIssue'),
+                 (2,N'Reject',N'PendingManager'),(2,N'Reject',N'PendingHR'),(2,N'Reject',N'PendingSecurity'),
+                 (2,N'Reject',N'PendingIdCardTeam'),(3,N'Cancel',N'PendingManager'),(3,N'Cancel',N'PendingHR'))
+        v(Priority,ActionName,ForStatus)
+    WHERE @Status = v.ForStatus AND
+      ((v.Priority = 3 AND @ActorUserId IN (@Requester,ISNULL(@EmployeeUserId,-1)))
+       OR (v.Priority < 3 AND @ActorUserId <> ISNULL(@EmployeeUserId,-1) AND
+         CASE @Status
+           WHEN N'PendingManager' THEN CASE WHEN @ActorUserId = @ManagerUserId OR dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove') = 1 THEN 1 ELSE 0 END
+           WHEN N'PendingHR' THEN dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify')
+           WHEN N'PendingSecurity' THEN dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview')
+           ELSE dbo.fn_HasPermission(@ActorUserId,N'Cards.Process') END = 1))
+    ORDER BY v.Priority;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_CardRequest_Create
+    @ActorUserId INT,
+    @EmployeeId INT = NULL,
+    @RequestType NVARCHAR(20),
+    @Reason NVARCHAR(500) = NULL,
+    @MobileNumber NVARCHAR(20),
+    @Address NVARCHAR(400),
+    @BloodGroup NVARCHAR(5),
+    @EmergencyContactName NVARCHAR(150),
+    @EmergencyContactNumber NVARCHAR(20),
+    @PhotoContentType NVARCHAR(50) = NULL,
+    @Photo VARBINARY(MAX) = NULL,
+    @CorrelationId UNIQUEIDENTIFIER = NULL,
+    @IpAddress VARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        SET @Reason = NULLIF(LTRIM(RTRIM(@Reason)),N'');
+        IF @RequestType NOT IN (N'New',N'Lost',N'Damaged') THROW 50400,N'Invalid requestType.',1;
+        IF @Reason IS NOT NULL AND LEN(@Reason)>500 THROW 50400,N'Reason is too long.',1;
+        IF @RequestType=N'Lost' AND LEN(@Reason)<5 THROW 50400,N'A reason is required for lost cards.',1;
+        IF @RequestType=N'Damaged' AND @Reason NOT IN (N'Scratched',N'Broken',N'RfidNotWorking',N'CardExpired',N'PhotoNotVisible')
+            THROW 50400,N'Invalid damaged-card reason.',1;
+        IF NULLIF(@MobileNumber,N'') IS NULL OR NULLIF(@Address,N'') IS NULL OR NULLIF(@BloodGroup,N'') IS NULL
+           OR NULLIF(@EmergencyContactName,N'') IS NULL OR NULLIF(@EmergencyContactNumber,N'') IS NULL
+            THROW 50400,N'All contact fields are required.',1;
+        IF @BloodGroup NOT IN (N'A+',N'A-',N'B+',N'B-',N'AB+',N'AB-',N'O+',N'O-') THROW 50400,N'Invalid bloodGroup.',1;
+        IF (@Photo IS NULL AND @PhotoContentType IS NOT NULL) OR (@Photo IS NOT NULL AND (@PhotoContentType IS NULL OR @PhotoContentType NOT IN (N'image/jpeg',N'image/png')))
+            THROW 50400,N'Invalid photo content type.',1;
+        IF @Photo IS NOT NULL AND (DATALENGTH(@Photo)<1 OR DATALENGTH(@Photo)>1048576) THROW 50400,N'Photo must be at most 1 MB.',1;
+        IF @EmployeeId IS NULL SELECT @EmployeeId=EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId;
+        DECLARE @EmployeeUserId INT,@EmpStatus NVARCHAR(20),@LocationId INT,@OldCardId BIGINT;
+        SELECT @EmployeeUserId=UserId,@EmpStatus=EmploymentStatus,@LocationId=LocationId FROM dbo.Employees WHERE EmployeeId=@EmployeeId;
+        IF @EmpStatus IS NULL THROW 50404,N'Employee not found.',1;
+        IF ISNULL(@EmployeeUserId,-1)<>@ActorUserId AND dbo.fn_HasPermission(@ActorUserId,N'Employees.ViewAll')=0
+            THROW 50403,N'Employees.ViewAll is required to request for another employee.',1;
+        IF @EmpStatus<>N'Active' THROW 50422,N'Card requests require an active employee.',1;
+        SELECT TOP(1) @OldCardId=CardId FROM dbo.RFIDCards WHERE EmployeeId=@EmployeeId AND Status IN (N'Active',N'Blocked')
+        ORDER BY CASE Status WHEN N'Active' THEN 0 ELSE 1 END, CardId DESC;
+        IF @RequestType=N'New' AND EXISTS(SELECT 1 FROM dbo.RFIDCards WHERE EmployeeId=@EmployeeId AND Status=N'Active')
+            THROW 50409,N'An active card already exists.',1;
+        IF @RequestType=N'Lost' AND @OldCardId IS NULL THROW 50422,N'An active or blocked card is required.',1;
+        IF @RequestType=N'Damaged' AND NOT EXISTS(SELECT 1 FROM dbo.RFIDCards WHERE EmployeeId=@EmployeeId AND Status=N'Active')
+            THROW 50422,N'An active card is required.',1;
+        IF @RequestType=N'New' AND @Photo IS NULL AND NOT EXISTS(SELECT 1 FROM dbo.EmployeePhotos WHERE EmployeeId=@EmployeeId)
+            THROW 50422,N'A photo is required for a new ID card.',1;
+        BEGIN TRAN;
+        IF EXISTS(SELECT 1 FROM dbo.CardRequests WITH(UPDLOCK,HOLDLOCK) WHERE EmployeeId=@EmployeeId AND Status IN
+            (N'PendingManager',N'PendingHR',N'PendingSecurity',N'PendingIdCardTeam',N'Printing',N'ReadyToIssue'))
+            THROW 50409,N'An open card request already exists.',1;
+        UPDATE dbo.Employees SET MobileNumber=@MobileNumber,Address=@Address,BloodGroup=@BloodGroup,
+            EmergencyContactName=@EmergencyContactName,EmergencyContactNumber=@EmergencyContactNumber,
+            UpdatedAtUtc=SYSUTCDATETIME(),UpdatedByUserId=@ActorUserId WHERE EmployeeId=@EmployeeId;
+        IF @Photo IS NOT NULL
+            MERGE dbo.EmployeePhotos t USING(SELECT @EmployeeId EmployeeId)s ON t.EmployeeId=s.EmployeeId
+            WHEN MATCHED THEN UPDATE SET ContentType=@PhotoContentType,Photo=@Photo,SizeBytes=DATALENGTH(@Photo),UploadedAtUtc=SYSUTCDATETIME(),UploadedByUserId=@ActorUserId
+            WHEN NOT MATCHED THEN INSERT(EmployeeId,ContentType,Photo,SizeBytes,UploadedAtUtc,UploadedByUserId)
+                 VALUES(@EmployeeId,@PhotoContentType,@Photo,DATALENGTH(@Photo),SYSUTCDATETIME(),@ActorUserId);
+        IF @RequestType=N'Lost' AND EXISTS(SELECT 1 FROM dbo.RFIDCards WHERE CardId=@OldCardId AND Status=N'Active')
+            UPDATE dbo.RFIDCards SET Status=N'Blocked',BlockedAtUtc=SYSUTCDATETIME(),BlockReason=CONCAT(N'Reported lost: ',@Reason),
+                UpdatedAtUtc=SYSUTCDATETIME(),UpdatedByUserId=@ActorUserId WHERE CardId=@OldCardId;
+        DECLARE @Seq INT=NEXT VALUE FOR dbo.seq_CardRequestNumber;
+        DECLARE @Number NVARCHAR(20)=CONCAT(N'CR-',YEAR(SYSUTCDATETIME()),N'-',RIGHT(CONCAT(N'00000',@Seq),5));
+        INSERT dbo.CardRequests(RequestNumber,RequestType,EmployeeId,OldCardId,Reason,Status,RequestedByUserId,
+            MobileNumber,Address,BloodGroup,EmergencyContactName,EmergencyContactNumber)
+        VALUES(@Number,@RequestType,@EmployeeId,CASE WHEN @RequestType IN(N'Lost',N'Damaged') THEN @OldCardId END,
+            @Reason,N'PendingManager',@ActorUserId,@MobileNumber,@Address,@BloodGroup,@EmergencyContactName,@EmergencyContactNumber);
+        DECLARE @Id BIGINT=SCOPE_IDENTITY();
+        INSERT dbo.CardRequestHistory(CardRequestId,FromStatus,ToStatus,Action,Comments,ActorUserId)
+        VALUES(@Id,NULL,N'PendingManager',N'Submit',@Reason,@ActorUserId);
+        DECLARE @Summary NVARCHAR(500)=CONCAT(N'Card request ',@Number,N' (',@RequestType,N') submitted.');
+        DECLARE @After NVARCHAR(MAX)=(SELECT CardRequestId,RequestNumber,RequestType,Status FROM dbo.vw_CardRequests WHERE CardRequestId=@Id FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+        DECLARE @Route NVARCHAR(200)=CONCAT(N'/cards/requests/',@Id);
+        EXEC dbo.usp_Audit_Write @ActorUserId,N'CardRequest.Submit',N'CardRequest',@Id,@Summary,NULL,@After,@Reason,@CorrelationId,@IpAddress;
+        DECLARE @ManagerUser INT=(SELECT m.UserId FROM dbo.Employees e JOIN dbo.Employees m ON m.EmployeeId=e.ManagerEmployeeId
+                                  WHERE e.EmployeeId=@EmployeeId AND m.EmploymentStatus=N'Active');
+        IF @ManagerUser IS NOT NULL
+            EXEC dbo.usp_Notification_Create @ManagerUser,N'CardRequest',N'ID card request pending approval',@Summary,N'CardRequest',@Id,@Route,@ActorUserId;
+        ELSE
+            EXEC dbo.usp_Notification_CreateForRole N'Manager',@LocationId,N'CardRequest',N'ID card request pending approval',@Summary,N'CardRequest',@Id,@Route,@ActorUserId;
+        COMMIT;
+        EXEC dbo.usp_CardRequest_Get @ActorUserId,@Id;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT>0 ROLLBACK;
+        THROW;
+    END CATCH
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_CardRequest_Decide
+    @ActorUserId INT,
+    @CardRequestId BIGINT,
+    @Action NVARCHAR(20),
+    @Comments NVARCHAR(1000)=NULL,
+    @Version BINARY(8),
+    @CorrelationId UNIQUEIDENTIFIER=NULL,
+    @IpAddress VARCHAR(45)=NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    BEGIN TRY
+        SET @Comments=NULLIF(LTRIM(RTRIM(@Comments)),N'');
+        IF @Action NOT IN(N'Approve',N'Reject',N'Verify',N'MarkPrinted',N'Issue',N'Cancel') THROW 50400,N'Invalid card request action.',1;
+        IF @Action=N'Reject' AND @Comments IS NULL THROW 50400,N'Comments are required when rejecting.',1;
+        DECLARE @EmpId INT,@Requester INT,@EmpUser INT,@ManagerUser INT,@LocId INT,@Status NVARCHAR(30),@RequestType NVARCHAR(20),
+                @Number NVARCHAR(20),@OldCardId BIGINT,@NewCardId BIGINT,@CurrentVersion BINARY(8);
+        SELECT @EmpId=r.EmployeeId,@Requester=r.RequestedByUserId,@EmpUser=r.EmployeeUserId,@ManagerUser=r.ManagerUserId,
+            @LocId=r.EmployeeLocationId,@Status=r.Status,@RequestType=r.RequestType,@Number=r.RequestNumber,
+            @OldCardId=r.OldCardId,@NewCardId=r.NewCardId,@CurrentVersion=r.Version
+        FROM dbo.vw_CardRequests r WHERE r.CardRequestId=@CardRequestId;
+        IF @EmpId IS NULL OR dbo.fn_UserCanAccessLocation(@ActorUserId,@LocId)=0 THROW 50404,N'Card request not found.',1;
+        BEGIN TRAN;
+        SELECT @Status=Status,@CurrentVersion=Version FROM dbo.CardRequests WITH(UPDLOCK,HOLDLOCK) WHERE CardRequestId=@CardRequestId;
+        IF @CurrentVersion<>@Version THROW 50409,N'The card request was changed. Reload and try again.',1;
+        IF NOT ((@Status=N'PendingManager' AND @Action IN(N'Approve',N'Reject',N'Cancel'))
+             OR (@Status=N'PendingHR' AND @Action IN(N'Verify',N'Reject',N'Cancel'))
+             OR (@Status=N'PendingSecurity' AND @Action IN(N'Approve',N'Reject'))
+             OR (@Status=N'PendingIdCardTeam' AND @Action IN(N'Approve',N'Reject'))
+             OR (@Status=N'Printing' AND @Action=N'MarkPrinted')
+             OR (@Status=N'ReadyToIssue' AND @Action=N'Issue'))
+            THROW 50409,N'This action is not allowed in the current status.',1;
+        DECLARE @IsAdmin BIT=CASE WHEN EXISTS(SELECT 1 FROM dbo.UserRoles ur JOIN dbo.Roles ro ON ro.RoleId=ur.RoleId
+            WHERE ur.UserId=@ActorUserId AND ro.RoleName=N'SystemAdmin') THEN 1 ELSE 0 END;
+        DECLARE @Allowed BIT=0;
+        IF @Action=N'Cancel'
+        BEGIN
+            IF @Status NOT IN(N'PendingManager',N'PendingHR') THROW 50409,N'Cancel is not allowed in this status.',1;
+            IF @ActorUserId NOT IN(@Requester,ISNULL(@EmpUser,-1)) THROW 50403,N'You cannot cancel this card request.',1;
+        END
+        ELSE
+        BEGIN
+            IF @ActorUserId=@EmpUser THROW 50403,N'You cannot act on your own request.',1;
+            IF @Status=N'PendingManager' AND @Action IN(N'Approve',N'Reject')
+                SET @Allowed=CASE WHEN @ManagerUser=@ActorUserId OR @IsAdmin=1 OR (@ManagerUser IS NULL AND dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1) THEN 1 ELSE 0 END;
+            IF @Status=N'PendingHR' AND @Action IN(N'Verify',N'Reject') SET @Allowed=dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify');
+            IF @Status=N'PendingSecurity' AND @Action IN(N'Approve',N'Reject') SET @Allowed=dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview');
+            IF @Status=N'PendingIdCardTeam' AND @Action IN(N'Approve',N'Reject') OR @Status=N'Printing' AND @Action=N'MarkPrinted' OR @Status=N'ReadyToIssue' AND @Action=N'Issue'
+                SET @Allowed=dbo.fn_HasPermission(@ActorUserId,N'Cards.Process');
+            IF @Allowed=0 THROW 50403,N'You are not authorized for the current card request stage.',1;
+        END
+        DECLARE @Now DATETIME2(3)=SYSUTCDATETIME(),@Next NVARCHAR(30)=@Status;
+        IF @Action=N'Cancel' SET @Next=N'Cancelled';
+        ELSE IF @Action=N'Reject' SET @Next=N'Rejected';
+        ELSE IF @Status=N'PendingManager' SET @Next=N'PendingHR';
+        ELSE IF @Status=N'PendingHR' SET @Next=CASE WHEN @RequestType=N'Lost' THEN N'PendingSecurity' ELSE N'PendingIdCardTeam' END;
+        ELSE IF @Status=N'PendingSecurity' SET @Next=N'PendingIdCardTeam';
+        ELSE IF @Status=N'PendingIdCardTeam' SET @Next=N'Printing';
+        ELSE IF @Status=N'Printing' SET @Next=N'ReadyToIssue';
+        ELSE IF @Status=N'ReadyToIssue' SET @Next=N'Closed';
+        ELSE THROW 50409,N'This action is not allowed in the current status.',1;
+        IF @Status=N'PendingSecurity' AND @Action=N'Approve' AND @OldCardId IS NOT NULL
+            UPDATE dbo.RFIDCards SET Status=N'Deactivated',UpdatedAtUtc=@Now,UpdatedByUserId=@ActorUserId WHERE CardId=@OldCardId;
+        IF @Action=N'MarkPrinted'
+        BEGIN
+            DECLARE @Uid NVARCHAR(64)=UPPER(LEFT(REPLACE(CONVERT(NVARCHAR(36),NEWID()),N'-',N''),16));
+            INSERT dbo.RFIDCards(CardUid,EmployeeId,CardType,Status,CardRequestId,CreatedByUserId)
+            VALUES(@Uid,@EmpId,N'Permanent',N'Requested',@CardRequestId,@ActorUserId);
+            SET @NewCardId=SCOPE_IDENTITY();
+        END
+        IF @Action=N'Issue'
+        BEGIN
+            IF @NewCardId IS NULL THROW 50422,N'Printed card record is missing.',1;
+            UPDATE dbo.RFIDCards SET Status=N'Active',IssuedAtUtc=@Now,ActivatedAtUtc=@Now,ExpiresAtUtc=DATEADD(YEAR,3,@Now),
+                UpdatedAtUtc=@Now,UpdatedByUserId=@ActorUserId WHERE CardId=@NewCardId AND EmployeeId=@EmpId;
+            IF @RequestType IN(N'Lost',N'Damaged') AND @OldCardId IS NOT NULL
+                UPDATE dbo.RFIDCards SET Status=N'Deactivated',UpdatedAtUtc=@Now,UpdatedByUserId=@ActorUserId
+                WHERE CardId=@OldCardId AND Status<>N'Deactivated';
+        END
+        UPDATE dbo.CardRequests SET Status=@Next,NewCardId=ISNULL(@NewCardId,NewCardId),UpdatedAtUtc=@Now,
+            VerifiedByUserId=CASE WHEN @Action=N'Verify' THEN @ActorUserId ELSE VerifiedByUserId END,
+            VerifiedAtUtc=CASE WHEN @Action=N'Verify' THEN @Now ELSE VerifiedAtUtc END,
+            ApprovedByUserId=CASE WHEN @Action IN(N'Approve',N'Reject',N'Issue') THEN @ActorUserId ELSE ApprovedByUserId END,
+            DecidedAtUtc=CASE WHEN @Next IN(N'Rejected',N'Cancelled',N'Closed') THEN @Now ELSE DecidedAtUtc END,
+            ClosedAtUtc=CASE WHEN @Next=N'Closed' THEN @Now ELSE ClosedAtUtc END,DecisionComments=ISNULL(@Comments,DecisionComments)
+        WHERE CardRequestId=@CardRequestId;
+        INSERT dbo.CardRequestHistory(CardRequestId,FromStatus,ToStatus,Action,Comments,ActorUserId)
+        VALUES(@CardRequestId,@Status,@Next,@Action,@Comments,@ActorUserId);
+        DECLARE @Summary NVARCHAR(500)=CONCAT(N'Card request ',@Number,N': ',@Status,N' -> ',@Next,N'.');
+        DECLARE @Before NVARCHAR(MAX)=(SELECT @Status status FOR JSON PATH,WITHOUT_ARRAY_WRAPPER),@After NVARCHAR(MAX)=(SELECT @Next status FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+        DECLARE @AuditAction NVARCHAR(100)=CONCAT(N'CardRequest.',@Action),@Route NVARCHAR(200)=CONCAT(N'/cards/requests/',@CardRequestId),
+                @Title NVARCHAR(200)=CASE WHEN @Next=N'ReadyToIssue' THEN N'Your ID card is ready for collection' ELSE N'ID card request updated' END;
+        EXEC dbo.usp_Audit_Write @ActorUserId,@AuditAction,N'CardRequest',@CardRequestId,@Summary,@Before,@After,@Comments,@CorrelationId,@IpAddress;
+        EXEC dbo.usp_Notification_Create @Requester,N'CardRequest',@Title,@Summary,N'CardRequest',@CardRequestId,@Route,@ActorUserId;
+        IF @Next=N'PendingHR' EXEC dbo.usp_Notification_CreateForRole N'HRAdmin',@LocId,N'CardRequest',N'ID card request requires HR verification',@Summary,N'CardRequest',@CardRequestId,@Route,@ActorUserId;
+        IF @Next=N'PendingSecurity' EXEC dbo.usp_Notification_CreateForRole N'SecurityTeam',@LocId,N'CardRequest',N'Lost card requires security review',@Summary,N'CardRequest',@CardRequestId,@Route,@ActorUserId;
+        IF @Next=N'PendingIdCardTeam' EXEC dbo.usp_Notification_CreateForRole N'IdCardTeam',@LocId,N'CardRequest',N'ID card request requires processing',@Summary,N'CardRequest',@CardRequestId,@Route,@ActorUserId;
+        COMMIT;
+        EXEC dbo.usp_CardRequest_Get @ActorUserId,@CardRequestId;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT>0 ROLLBACK;
         THROW;
     END CATCH
 END

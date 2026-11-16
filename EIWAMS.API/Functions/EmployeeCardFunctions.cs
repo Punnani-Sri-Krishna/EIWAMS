@@ -44,6 +44,14 @@ public sealed class EmployeeFunctions(IServiceProvider services, IEmployeeServic
     [Function(nameof(GetEmployeeHistory))]
     public async Task<IActionResult> GetEmployeeHistory([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/employees/{id:int}/history")] HttpRequest req, int id)
         => Ok(await service.GetHistoryAsync(id));
+
+    [Function(nameof(Employees_GetPhoto))]
+    public async Task<IActionResult> Employees_GetPhoto([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/employees/{id:int}/photo")] HttpRequest req, int id)
+        => Ok(await service.GetPhotoAsync(id));
+
+    [Function(nameof(Employees_Sync))]
+    public async Task<IActionResult> Employees_Sync([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/employees/sync")] HttpRequest req)
+        => Ok(await service.SyncAsync(await ReadBodyAsync<EmployeeSyncRequest>(req)));
 }
 
 /// <summary>RFID card lifecycle and card requests.</summary>
@@ -81,11 +89,19 @@ public sealed class CardFunctions(IServiceProvider services, ICardService servic
     public async Task<IActionResult> SearchCardRequests([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/card-requests")] HttpRequest req)
         => Ok(await service.SearchRequestsAsync(BindQuery<CardRequestQuery>(req)));
 
+    [Function(nameof(CardRequests_Queue))]
+    public async Task<IActionResult> CardRequests_Queue([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/card-requests/queue")] HttpRequest req)
+        => Ok(await service.QueueRequestsAsync(BindQuery<CardRequestQueueQuery>(req)));
+
+    [Function(nameof(CardRequests_Get))]
+    public async Task<IActionResult> CardRequests_Get([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/card-requests/{id:long}")] HttpRequest req, long id)
+        => Ok(await service.GetRequestAsync(id));
+
     [Function(nameof(CreateCardRequest))]
     public async Task<IActionResult> CreateCardRequest([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/card-requests")] HttpRequest req)
         => Created(await service.CreateRequestAsync(await ReadBodyAsync<CreateCardRequestRequest>(req)));
 
-    [Function(nameof(DecideCardRequest))]
-    public async Task<IActionResult> DecideCardRequest([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/card-requests/{id:long}/decision")] HttpRequest req, long id)
+    [Function(nameof(CardRequests_Decide))]
+    public async Task<IActionResult> CardRequests_Decide([HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "v1/card-requests/{id:long}/decision")] HttpRequest req, long id)
         => Ok(await service.DecideRequestAsync(id, await ReadBodyAsync<CardRequestDecisionRequest>(req)), ApiMessages.Updated);
 }

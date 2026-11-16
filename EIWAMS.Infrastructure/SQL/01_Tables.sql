@@ -119,7 +119,7 @@ CREATE TABLE dbo.Locations (
     ParentLocationId INT NULL CONSTRAINT FK_Locations_Parent REFERENCES dbo.Locations (LocationId),
     LocationCode     NVARCHAR(30)  NOT NULL CONSTRAINT UQ_Locations_Code UNIQUE,
     LocationName     NVARCHAR(150) NOT NULL,
-    LocationType     NVARCHAR(20)  NOT NULL CONSTRAINT CK_Locations_Type CHECK (LocationType IN (N'Campus', N'Building', N'Floor', N'Zone')),
+    LocationType     NVARCHAR(20)  NOT NULL CONSTRAINT CK_Locations_Type CHECK (LocationType IN (N'Campus', N'Building', N'Floor', N'Wing', N'Zone')),
     IsRestricted     BIT NOT NULL CONSTRAINT DF_Locations_IsRestricted DEFAULT (0),
     IsActive         BIT NOT NULL CONSTRAINT DF_Locations_IsActive DEFAULT (1),
     TimeZone         NVARCHAR(64) NOT NULL CONSTRAINT DF_Locations_TimeZone DEFAULT (N'India Standard Time'),
@@ -265,9 +265,9 @@ CREATE TABLE dbo.CardRequests (
     EmployeeId          INT NOT NULL CONSTRAINT FK_CardRequests_Employees REFERENCES dbo.Employees (EmployeeId),
     OldCardId           BIGINT NULL CONSTRAINT FK_CardRequests_OldCard REFERENCES dbo.RFIDCards (CardId),
     NewCardId           BIGINT NULL CONSTRAINT FK_CardRequests_NewCard REFERENCES dbo.RFIDCards (CardId),
-    Reason              NVARCHAR(500) NOT NULL,
-    Status              NVARCHAR(30) NOT NULL CONSTRAINT DF_CardRequests_Status DEFAULT (N'Submitted')
-                        CONSTRAINT CK_CardRequests_Status CHECK (Status IN (N'Submitted', N'VerificationPending', N'Approved', N'Issued', N'Rejected', N'Cancelled')),
+    Reason              NVARCHAR(500) NULL,
+    Status              NVARCHAR(30) NOT NULL CONSTRAINT DF_CardRequests_Status DEFAULT (N'PendingManager')
+                        CONSTRAINT CK_CardRequests_Status CHECK (Status IN (N'PendingManager', N'PendingHR', N'PendingSecurity', N'PendingIdCardTeam', N'Printing', N'ReadyToIssue', N'Closed', N'Rejected', N'Cancelled')),
     RequestedAtUtc      DATETIME2(3) NOT NULL CONSTRAINT DF_CardRequests_RequestedAtUtc DEFAULT (SYSUTCDATETIME()),
     RequestedByUserId   INT NOT NULL CONSTRAINT FK_CardRequests_RequestedBy REFERENCES dbo.Users (UserId),
     VerifiedByUserId    INT NULL CONSTRAINT FK_CardRequests_VerifiedBy REFERENCES dbo.Users (UserId),
@@ -318,7 +318,7 @@ CREATE TABLE dbo.AccessRequests (
     ValidToUtc            DATETIME2(3) NOT NULL,
     Status                NVARCHAR(20) NOT NULL CONSTRAINT DF_AccessRequests_Status DEFAULT (N'Draft')
                           CONSTRAINT CK_AccessRequests_Status CHECK (Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved', N'Rejected', N'Cancelled', N'Provisioned', N'Expired')),
-    CurrentStage          NVARCHAR(20) NULL CONSTRAINT CK_AccessRequests_Stage CHECK (CurrentStage IN (N'Manager', N'Security', N'FacilityAdmin')),
+    CurrentStage          NVARCHAR(20) NULL CONSTRAINT CK_AccessRequests_Stage CHECK (CurrentStage IN (N'Manager', N'SecurityHead', N'Security', N'AccessControl')),
     Cycle                 INT NOT NULL CONSTRAINT DF_AccessRequests_Cycle DEFAULT (0),
     SubmittedAtUtc        DATETIME2(3) NULL,
     DecidedAtUtc          DATETIME2(3) NULL,
@@ -342,7 +342,7 @@ CREATE TABLE dbo.AccessRequestApprovals (
     ApprovalId      BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_AccessRequestApprovals PRIMARY KEY,
     AccessRequestId BIGINT NOT NULL CONSTRAINT FK_Approvals_AccessRequests REFERENCES dbo.AccessRequests (AccessRequestId),
     Cycle           INT NOT NULL,
-    Stage           NVARCHAR(20) NOT NULL CONSTRAINT CK_Approvals_Stage CHECK (Stage IN (N'Manager', N'Security', N'FacilityAdmin')),
+    Stage           NVARCHAR(20) NOT NULL CONSTRAINT CK_Approvals_Stage CHECK (Stage IN (N'Manager', N'SecurityHead', N'Security', N'AccessControl')),
     StageOrder      INT NOT NULL,
     Decision        NVARCHAR(20) NOT NULL CONSTRAINT DF_Approvals_Decision DEFAULT (N'Pending')
                     CONSTRAINT CK_Approvals_Decision CHECK (Decision IN (N'Pending', N'Approved', N'Returned', N'Rejected', N'Skipped')),
@@ -598,6 +598,125 @@ CREATE TABLE dbo.Notifications (
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_Notifications_User')
     CREATE INDEX IX_Notifications_User ON dbo.Notifications (UserId, ReadAtUtc, CreatedAtUtc);
+GO
+
+/*=====================================================================
+  v2 schema changes (guarded ALTERs + idempotent data migrations).
+  Safe on a fresh database (inline definitions above are already v2) and on
+  an existing v1 database.
+=====================================================================*/
+
+/*--- Locations: add 'Wing' ---*/
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Locations_Type' AND definition NOT LIKE N'%Wing%')
+    ALTER TABLE dbo.Locations DROP CONSTRAINT CK_Locations_Type;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Locations_Type')
+    ALTER TABLE dbo.Locations ADD CONSTRAINT CK_Locations_Type CHECK (LocationType IN (N'Campus', N'Building', N'Floor', N'Wing', N'Zone'));
+GO
+
+/*--- Employees: designation + contact profile ---*/
+IF COL_LENGTH(N'dbo.Employees', N'Designation') IS NULL ALTER TABLE dbo.Employees ADD Designation NVARCHAR(100) NULL;
+IF COL_LENGTH(N'dbo.Employees', N'MobileNumber') IS NULL ALTER TABLE dbo.Employees ADD MobileNumber NVARCHAR(20) NULL;
+IF COL_LENGTH(N'dbo.Employees', N'Address') IS NULL ALTER TABLE dbo.Employees ADD Address NVARCHAR(400) NULL;
+IF COL_LENGTH(N'dbo.Employees', N'BloodGroup') IS NULL ALTER TABLE dbo.Employees ADD BloodGroup NVARCHAR(5) NULL;
+IF COL_LENGTH(N'dbo.Employees', N'EmergencyContactName') IS NULL ALTER TABLE dbo.Employees ADD EmergencyContactName NVARCHAR(150) NULL;
+IF COL_LENGTH(N'dbo.Employees', N'EmergencyContactNumber') IS NULL ALTER TABLE dbo.Employees ADD EmergencyContactNumber NVARCHAR(20) NULL;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Employees_BloodGroup')
+    ALTER TABLE dbo.Employees ADD CONSTRAINT CK_Employees_BloodGroup
+        CHECK (BloodGroup IS NULL OR BloodGroup IN (N'A+', N'A-', N'B+', N'B-', N'AB+', N'AB-', N'O+', N'O-'));
+GO
+
+/*--- Employee photos (SQL only, max 1 MB) ---*/
+IF OBJECT_ID(N'dbo.EmployeePhotos', N'U') IS NULL
+CREATE TABLE dbo.EmployeePhotos (
+    EmployeeId       INT NOT NULL CONSTRAINT PK_EmployeePhotos PRIMARY KEY
+                     CONSTRAINT FK_EmployeePhotos_Employees REFERENCES dbo.Employees (EmployeeId),
+    ContentType      NVARCHAR(50) NOT NULL CONSTRAINT CK_EmployeePhotos_ContentType CHECK (ContentType IN (N'image/jpeg', N'image/png')),
+    Photo            VARBINARY(MAX) NOT NULL CONSTRAINT CK_EmployeePhotos_Size CHECK (DATALENGTH(Photo) <= 1048576),
+    SizeBytes        INT NOT NULL,
+    UploadedAtUtc    DATETIME2(3) NOT NULL CONSTRAINT DF_EmployeePhotos_UploadedAtUtc DEFAULT (SYSUTCDATETIME()),
+    UploadedByUserId INT NULL CONSTRAINT FK_EmployeePhotos_Users REFERENCES dbo.Users (UserId)
+);
+GO
+
+/*--- Card requests: v2 statuses, contact snapshot, closure ---*/
+IF COL_LENGTH(N'dbo.CardRequests', N'MobileNumber') IS NULL ALTER TABLE dbo.CardRequests ADD MobileNumber NVARCHAR(20) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'Address') IS NULL ALTER TABLE dbo.CardRequests ADD Address NVARCHAR(400) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'BloodGroup') IS NULL ALTER TABLE dbo.CardRequests ADD BloodGroup NVARCHAR(5) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'EmergencyContactName') IS NULL ALTER TABLE dbo.CardRequests ADD EmergencyContactName NVARCHAR(150) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'EmergencyContactNumber') IS NULL ALTER TABLE dbo.CardRequests ADD EmergencyContactNumber NVARCHAR(20) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'ClosedAtUtc') IS NULL ALTER TABLE dbo.CardRequests ADD ClosedAtUtc DATETIME2(3) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'UpdatedAtUtc') IS NULL ALTER TABLE dbo.CardRequests ADD UpdatedAtUtc DATETIME2(3) NULL;
+IF COL_LENGTH(N'dbo.CardRequests', N'Version') IS NULL ALTER TABLE dbo.CardRequests ADD Version ROWVERSION NOT NULL;
+GO
+IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.CardRequests') AND name = N'Reason' AND is_nullable = 0)
+    ALTER TABLE dbo.CardRequests ALTER COLUMN Reason NVARCHAR(500) NULL;
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CardRequests_Status' AND definition NOT LIKE N'%PendingManager%')
+    ALTER TABLE dbo.CardRequests DROP CONSTRAINT CK_CardRequests_Status;
+IF EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = N'DF_CardRequests_Status' AND definition NOT LIKE N'%PendingManager%')
+    ALTER TABLE dbo.CardRequests DROP CONSTRAINT DF_CardRequests_Status;
+GO
+UPDATE dbo.CardRequests
+SET Status = CASE Status WHEN N'Submitted' THEN N'PendingManager' WHEN N'VerificationPending' THEN N'PendingHR'
+                         WHEN N'Approved' THEN N'Printing' WHEN N'Issued' THEN N'Closed' END,
+    ClosedAtUtc = CASE WHEN Status = N'Issued' THEN ISNULL(ClosedAtUtc, ISNULL(DecidedAtUtc, RequestedAtUtc)) ELSE ClosedAtUtc END
+WHERE Status IN (N'Submitted', N'VerificationPending', N'Approved', N'Issued');
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_CardRequests_Status')
+    ALTER TABLE dbo.CardRequests ADD CONSTRAINT CK_CardRequests_Status
+        CHECK (Status IN (N'PendingManager', N'PendingHR', N'PendingSecurity', N'PendingIdCardTeam', N'Printing', N'ReadyToIssue', N'Closed', N'Rejected', N'Cancelled'));
+IF NOT EXISTS (SELECT 1 FROM sys.default_constraints WHERE name = N'DF_CardRequests_Status')
+    ALTER TABLE dbo.CardRequests ADD CONSTRAINT DF_CardRequests_Status DEFAULT (N'PendingManager') FOR Status;
+GO
+
+IF OBJECT_ID(N'dbo.CardRequestHistory', N'U') IS NULL
+CREATE TABLE dbo.CardRequestHistory (
+    HistoryId     BIGINT IDENTITY(1,1) NOT NULL CONSTRAINT PK_CardRequestHistory PRIMARY KEY,
+    CardRequestId BIGINT NOT NULL CONSTRAINT FK_CardRequestHistory_CardRequests REFERENCES dbo.CardRequests (CardRequestId),
+    FromStatus    NVARCHAR(30) NULL,
+    ToStatus      NVARCHAR(30) NOT NULL,
+    Action        NVARCHAR(30) NOT NULL,
+    Comments      NVARCHAR(1000) NULL,
+    ActorUserId   INT NULL CONSTRAINT FK_CardRequestHistory_Users REFERENCES dbo.Users (UserId),
+    CreatedAtUtc  DATETIME2(3) NOT NULL CONSTRAINT DF_CardRequestHistory_CreatedAtUtc DEFAULT (SYSUTCDATETIME())
+);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_CardRequestHistory_Request')
+    CREATE INDEX IX_CardRequestHistory_Request ON dbo.CardRequestHistory (CardRequestId, CreatedAtUtc);
+GO
+-- Back-fill a 'Submit' history row for legacy requests that have none.
+INSERT dbo.CardRequestHistory (CardRequestId, FromStatus, ToStatus, Action, Comments, ActorUserId, CreatedAtUtc)
+SELECT r.CardRequestId, NULL, N'PendingManager', N'Submit', NULL, r.RequestedByUserId, r.RequestedAtUtc
+FROM dbo.CardRequests r
+WHERE NOT EXISTS (SELECT 1 FROM dbo.CardRequestHistory h WHERE h.CardRequestId = r.CardRequestId);
+GO
+
+/*--- Access requests: AccessType / Building / Duration and v2 stages ---*/
+IF COL_LENGTH(N'dbo.AccessRequests', N'AccessType') IS NULL
+    ALTER TABLE dbo.AccessRequests ADD AccessType NVARCHAR(20) NOT NULL CONSTRAINT DF_AccessRequests_AccessType DEFAULT (N'Building');
+IF COL_LENGTH(N'dbo.AccessRequests', N'BuildingLocationId') IS NULL
+    ALTER TABLE dbo.AccessRequests ADD BuildingLocationId INT NULL CONSTRAINT FK_AccessRequests_Building REFERENCES dbo.Locations (LocationId);
+IF COL_LENGTH(N'dbo.AccessRequests', N'DurationCode') IS NULL
+    ALTER TABLE dbo.AccessRequests ADD DurationCode NVARCHAR(20) NULL;
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_AccessRequests_AccessType')
+    ALTER TABLE dbo.AccessRequests ADD CONSTRAINT CK_AccessRequests_AccessType CHECK (AccessType IN (N'Building', N'WingFloor'));
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_AccessRequests_DurationCode')
+    ALTER TABLE dbo.AccessRequests ADD CONSTRAINT CK_AccessRequests_DurationCode
+        CHECK (DurationCode IS NULL OR DurationCode IN (N'OneWeek', N'OneMonth', N'ThreeMonths', N'SixMonths', N'OneYear', N'Permanent', N'Custom'));
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_AccessRequests_Stage' AND definition LIKE N'%FacilityAdmin%')
+    ALTER TABLE dbo.AccessRequests DROP CONSTRAINT CK_AccessRequests_Stage;
+IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Approvals_Stage' AND definition LIKE N'%FacilityAdmin%')
+    ALTER TABLE dbo.AccessRequestApprovals DROP CONSTRAINT CK_Approvals_Stage;
+GO
+UPDATE dbo.AccessRequests SET CurrentStage = N'AccessControl' WHERE CurrentStage = N'FacilityAdmin';
+UPDATE dbo.AccessRequestApprovals SET Stage = N'AccessControl' WHERE Stage = N'FacilityAdmin';
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_AccessRequests_Stage')
+    ALTER TABLE dbo.AccessRequests ADD CONSTRAINT CK_AccessRequests_Stage CHECK (CurrentStage IN (N'Manager', N'SecurityHead', N'Security', N'AccessControl'));
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE name = N'CK_Approvals_Stage')
+    ALTER TABLE dbo.AccessRequestApprovals ADD CONSTRAINT CK_Approvals_Stage CHECK (Stage IN (N'Manager', N'SecurityHead', N'Security', N'AccessControl'));
 GO
 
 /*------------------- Append-only protection triggers ----------------*/

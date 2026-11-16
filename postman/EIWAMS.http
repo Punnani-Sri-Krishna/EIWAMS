@@ -10,6 +10,7 @@
 @facilityAdminUserId = 5
 @receptionUserId = 6
 @eshaUserId = 7
+@accessControlUserId = 13
 @auditorUserId = 8
 @eshaEmployeeId = 6
 @roleId = 8
@@ -246,7 +247,7 @@ Content-Type: application/json
 
 ### SearchCardRequests
 # @name searchCardRequests
-GET {{baseUrl}}/v1/card-requests?status=Submitted&page=1&pageSize=20
+GET {{baseUrl}}/v1/card-requests?status=PendingManager&page=1&pageSize=20
 X-User-Id: {{securityUserId}}
 
 ### CreateCardRequest
@@ -257,21 +258,32 @@ Content-Type: application/json
 
 {
   "employeeId": {{employeeId}},
-  "requestType": "Temporary",
-  "oldCardId": null,
-  "reason": "Forgot permanent card at home",
-  "requestedValidToUtc": "{{validToUtc}}"
+  "requestType": "New",
+  "reason": null,
+  "mobileNumber": "+91 90000 12345",
+  "address": "Bengaluru",
+  "bloodGroup": "O+",
+  "emergencyContactName": "Demo Contact",
+  "emergencyContactNumber": "+91 90000 12346",
+  "photoContentType": "image/jpeg",
+  "photoBase64": "/9j/"
 }
+
+### GetCardRequest
+# @name getCardRequest
+GET {{baseUrl}}/v1/card-requests/{{cardRequestId}}
+X-User-Id: {{managerUserId}}
 
 ### DecideCardRequest
 # @name decideCardRequest
 POST {{baseUrl}}/v1/card-requests/{{cardRequestId}}/decision
-X-User-Id: {{securityUserId}}
+X-User-Id: {{managerUserId}}
 Content-Type: application/json
 
 {
-  "decision": "Verify",
-  "comments": "Identity verified at desk"
+  "action": "Approve",
+  "comments": "Identity verified at desk",
+  "version": "{{getCardRequest.response.body.$.data.version}}"
 }
 
 ### DeactivateEmployee
@@ -301,41 +313,19 @@ Content-Type: application/json
 
 {
   "employeeId": {{eshaEmployeeId}},
+  "accessType": "WingFloor",
+  "buildingLocationId": 2,
   "locationId": 10,
-  "businessJustification": "Prototype validation in the R&D lab",
+  "durationCode": "Custom",
   "validFromUtc": "{{validFromUtc}}",
   "validToUtc": "{{validToUtc}}",
-  "submit": false
+  "justification": "Prototype validation in the R&D lab"
 }
 
 ### GetAccessRequest
 # @name getAccessRequest
 GET {{baseUrl}}/v1/access-requests/{{accessRequestId}}
 X-User-Id: {{eshaUserId}}
-
-### UpdateAccessRequest
-# @name updateAccessRequest
-PUT {{baseUrl}}/v1/access-requests/{{accessRequestId}}
-X-User-Id: {{eshaUserId}}
-Content-Type: application/json
-
-{
-  "locationId": 10,
-  "businessJustification": "Prototype validation in the R&D lab (updated)",
-  "validFromUtc": "{{validFromUtc}}",
-  "validToUtc": "{{validToUtc}}",
-  "version": "{{accessRequestVersion}}"
-}
-
-### SubmitAccessRequest
-# @name submitAccessRequest
-POST {{baseUrl}}/v1/access-requests/{{accessRequestId}}/submit
-X-User-Id: {{eshaUserId}}
-Content-Type: application/json
-
-{
-  "version": "{{accessRequestVersion}}"
-}
 
 ### GetPendingApprovals
 # @name getPendingApprovals
@@ -354,7 +344,7 @@ Content-Type: application/json
   "version": "{{accessRequestVersion}}"
 }
 
-### DecideApproval - Security - Stage 2 of 3 (Security).
+### DecideApproval - Security - Stage 2 of 3 (WingFloor requests).
 # @name decideApproval_Security
 POST {{baseUrl}}/v1/approvals/{{accessRequestId}}/decision
 X-User-Id: {{securityUserId}}
@@ -363,25 +353,25 @@ Content-Type: application/json
 {
   "decision": "Approve",
   "comments": "Security clearance verified",
-  "version": "{{accessRequestVersion}}"
+  "version": "{{getAccessRequest.response.body.$.data.version}}"
 }
 
-### DecideApproval - FacilityAdmin - Stage 3 of 3 (FacilityAdmin); the request becomes Approved.
-# @name decideApproval_FacilityAdmin
+### DecideApproval - AccessControl - Stage 3 of 3; the request becomes Approved.
+# @name decideApproval_AccessControl
 POST {{baseUrl}}/v1/approvals/{{accessRequestId}}/decision
-X-User-Id: {{facilityAdminUserId}}
+X-User-Id: {{accessControlUserId}}
 Content-Type: application/json
 
 {
   "decision": "Approve",
   "comments": "Capacity available",
-  "version": "{{accessRequestVersion}}"
+  "version": "{{getAccessRequest.response.body.$.data.version}}"
 }
 
 ### ProvisionPermission - Requires the request to be fully Approved (all three stages).
 # @name provisionPermission
 POST {{baseUrl}}/v1/permissions/provision
-X-User-Id: {{facilityAdminUserId}}
+X-User-Id: {{accessControlUserId}}
 Content-Type: application/json
 
 {
@@ -391,7 +381,7 @@ Content-Type: application/json
 ### SearchPermissions
 # @name searchPermissions
 GET {{baseUrl}}/v1/permissions?status=Active&page=1&pageSize=20
-X-User-Id: {{facilityAdminUserId}}
+X-User-Id: {{accessControlUserId}}
 
 ### RevokePermission
 # @name revokePermission
@@ -411,11 +401,13 @@ Content-Type: application/json
 
 {
   "employeeId": {{eshaEmployeeId}},
+  "accessType": "Building",
+  "buildingLocationId": 2,
   "locationId": 9,
-  "businessJustification": "Quarterly planning sessions on floor 5",
+  "durationCode": "Custom",
   "validFromUtc": "{{validFromUtc}}",
   "validToUtc": "{{validToUtc}}",
-  "submit": true
+  "justification": "Quarterly planning sessions on floor 5"
 }
 
 ### CancelAccessRequest

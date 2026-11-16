@@ -6,6 +6,7 @@ using EIWAMS.Application.Models.DTOs.Common;
 using EIWAMS.Application.Models.DTOs.Employees;
 using EIWAMS.Application.Models.DTOs.Security;
 using EIWAMS.Application.Models.DTOs.Visitors;
+using EIWAMS.Application.Models.DTOs.Identity;
 using FluentValidation;
 
 namespace EIWAMS.Application.Validators;
@@ -108,6 +109,47 @@ public sealed class DeactivateEmployeeRequestValidator : AbstractValidator<Deact
     }
 }
 
+public sealed class UpdateMyProfileRequestValidator : AbstractValidator<UpdateMyProfileRequest>
+{
+    private const string PhonePattern = @"^\+?[0-9][0-9 -]{6,19}$";
+    private static readonly string[] BloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+
+    public UpdateMyProfileRequestValidator()
+    {
+        RuleFor(x => x.MobileNumber).Matches(PhonePattern).When(x => x.MobileNumber is not null);
+        RuleFor(x => x.EmergencyContactNumber).Matches(PhonePattern).When(x => x.EmergencyContactNumber is not null);
+        RuleFor(x => x.Address).MaximumLength(400);
+        RuleFor(x => x.EmergencyContactName).MaximumLength(150);
+        RuleFor(x => x.BloodGroup).Must(v => v is null || BloodGroups.Contains(v, StringComparer.Ordinal))
+            .WithMessage("'bloodGroup' must be a supported blood group or null.");
+    }
+}
+
+public sealed class EmployeeSyncRequestValidator : AbstractValidator<EmployeeSyncRequest>
+{
+    public EmployeeSyncRequestValidator()
+    {
+        RuleFor(x => x.Employees).NotNull().Must(x => x.Count is >= 1 and <= 500)
+            .WithMessage("'employees' must contain between 1 and 500 rows.");
+        RuleForEach(x => x.Employees).ChildRules(row =>
+        {
+            row.RuleFor(x => x.EmployeeNumber).RequiredText("employeeNumber", 30).Matches(Rules.CodePattern);
+            row.RuleFor(x => x.FirstName).RequiredText("firstName", 100);
+            row.RuleFor(x => x.LastName).RequiredText("lastName", 100);
+            row.RuleFor(x => x.WorkEmail).RequiredText("workEmail", 256).EmailAddress();
+            row.RuleFor(x => x.Designation).MaximumLength(100);
+            row.RuleFor(x => x.DepartmentCode).RequiredText("departmentCode", 20).Matches(Rules.CodePattern);
+            row.RuleFor(x => x.ManagerEmployeeNumber).MaximumLength(30).Matches(Rules.CodePattern).When(x => !string.IsNullOrEmpty(x.ManagerEmployeeNumber));
+            row.RuleFor(x => x.LocationCode).RequiredText("locationCode", 30).Matches(Rules.CodePattern);
+            row.RuleFor(x => x.EmployeeType).OneOf(LookupValues.EmployeeTypes, "employeeType");
+            row.RuleFor(x => x.EmploymentStatus).OneOf(LookupValues.EmploymentStatuses, "employmentStatus");
+            row.RuleFor(x => x.JoinDate).NotEqual(default(DateOnly)).WithMessage("'joinDate' is required.");
+            row.RuleFor(x => x.EndDate).GreaterThanOrEqualTo(x => x.JoinDate).When(x => x.EndDate.HasValue)
+                .WithMessage("'endDate' must be on or after 'joinDate'.");
+        });
+    }
+}
+
 public sealed class CreateCardRequestValidator : AbstractValidator<CreateCardRequest>
 {
     public CreateCardRequestValidator()
@@ -136,9 +178,52 @@ public sealed class CreateCardRequestRequestValidator : AbstractValidator<Create
 {
     public CreateCardRequestRequestValidator()
     {
-        RuleFor(x => x.EmployeeId).GreaterThan(0).WithMessage("'employeeId' is required.");
-        RuleFor(x => x.RequestType).OneOf(LookupValues.CardRequestTypes, "requestType");
-        RuleFor(x => x.Reason).RequiredText("reason", 500);
+        RuleFor(x => x.EmployeeId).GreaterThan(0).When(x => x.EmployeeId.HasValue)
+            .WithMessage("'employeeId' must be positive.");
+        RuleFor(x => x.RequestType).OneOf(LookupValues.CardRequestTypesOffered, "requestType");
+        RuleFor(x => x.Reason).MaximumLength(500);
+        RuleFor(x => x.Reason).Must(x => !string.IsNullOrWhiteSpace(x) && x.Trim().Length >= 5)
+            .When(x => x.RequestType == "Lost").WithMessage("'reason' must be 5-500 characters for Lost requests.");
+        RuleFor(x => x.Reason).OneOf(LookupValues.DamagedReasons, "reason")
+            .When(x => x.RequestType == "Damaged");
+        RuleFor(x => x.MobileNumber).RequiredText("mobileNumber", 20)
+            .Matches(@"^\+?[0-9][0-9 -]{6,19}$").WithMessage("'mobileNumber' has an invalid format.");
+        RuleFor(x => x.Address).RequiredText("address", 400);
+        RuleFor(x => x.BloodGroup).OneOf(LookupValues.BloodGroups, "bloodGroup");
+        RuleFor(x => x.EmergencyContactName).RequiredText("emergencyContactName", 150);
+        RuleFor(x => x.EmergencyContactNumber).RequiredText("emergencyContactNumber", 20)
+            .Matches(@"^\+?[0-9][0-9 -]{6,19}$").WithMessage("'emergencyContactNumber' has an invalid format.");
+        RuleFor(x => x).Must(x => (string.IsNullOrWhiteSpace(x.PhotoBase64) && string.IsNullOrWhiteSpace(x.PhotoContentType))
+                                 || (!string.IsNullOrWhiteSpace(x.PhotoBase64) && !string.IsNullOrWhiteSpace(x.PhotoContentType)))
+            .WithMessage("'photoBase64' and 'photoContentType' must be supplied together.");
+        RuleFor(x => x).Must(ValidPhoto).WithMessage("Photo must be valid JPEG or PNG base64 data up to 1 MB.");
+    }
+
+    private static bool ValidPhoto(CreateCardRequestRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhotoBase64) && string.IsNullOrWhiteSpace(request.PhotoContentType))
+            return true;
+
+        string value = request.PhotoBase64!.Trim();
+        int comma = value.IndexOf(',');
+        if (value.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0)
+            value = value[(comma + 1)..];
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(value);
+            if (bytes.Length is < 1 or > 1_048_576)
+                return false;
+            return request.PhotoContentType switch
+            {
+                "image/jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+                "image/png" => bytes.Length >= 8 && bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
+                _ => false
+            };
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 }
 
@@ -146,10 +231,11 @@ public sealed class CardRequestDecisionRequestValidator : AbstractValidator<Card
 {
     public CardRequestDecisionRequestValidator()
     {
-        RuleFor(x => x.Decision).OneOf(LookupValues.CardRequestDecisions, "decision");
+        RuleFor(x => x.Action).OneOf(LookupValues.CardRequestActions, "action");
         RuleFor(x => x.Comments).MaximumLength(1000);
-        RuleFor(x => x.Comments).Must(c => !string.IsNullOrWhiteSpace(c)).When(x => x.Decision == "Reject")
+        RuleFor(x => x.Comments).Must(c => !string.IsNullOrWhiteSpace(c)).When(x => x.Action == "Reject")
             .WithMessage("'comments' are required when rejecting.");
+        RuleFor(x => x.Version).RequiredVersion();
     }
 }
 
@@ -157,14 +243,23 @@ public sealed class CreateAccessRequestRequestValidator : AbstractValidator<Crea
 {
     public CreateAccessRequestRequestValidator()
     {
-        RuleFor(x => x.EmployeeId).GreaterThan(0).WithMessage("'employeeId' is required.");
+        RuleFor(x => x.EmployeeId).GreaterThan(0).When(x => x.EmployeeId.HasValue)
+            .WithMessage("'employeeId' must be positive.");
+        RuleFor(x => x.AccessType).OneOf(LookupValues.AccessTypes, "accessType");
+        RuleFor(x => x.BuildingLocationId).GreaterThan(0).WithMessage("'buildingLocationId' is required.");
         RuleFor(x => x.LocationId).GreaterThan(0).WithMessage("'locationId' is required.");
-        RuleFor(x => x.BusinessJustification).RequiredText("businessJustification", 1000)
-            .MinimumLength(10).WithMessage("'businessJustification' must be at least 10 characters.");
-        RuleFor(x => x.ValidFromUtc).NotNull().WithMessage("'validFromUtc' is required.");
-        RuleFor(x => x.ValidToUtc).NotNull().WithMessage("'validToUtc' is required.");
-        RuleFor(x => x.ValidToUtc).GreaterThan(x => x.ValidFromUtc).When(x => x.ValidFromUtc.HasValue && x.ValidToUtc.HasValue)
+        RuleFor(x => x.DurationCode).OneOf(LookupValues.DurationCodes, "durationCode");
+        RuleFor(x => x.Justification).RequiredText("justification", 1000)
+            .MinimumLength(10).WithMessage("'justification' must be at least 10 characters.");
+        RuleFor(x => x.ValidFromUtc).Must(x => !x.HasValue || x.Value >= DateTime.UtcNow.AddMinutes(-5))
+            .WithMessage("'validFromUtc' cannot be earlier than five minutes ago.");
+        RuleFor(x => x.ValidToUtc).NotNull().When(x => x.DurationCode == "Custom")
+            .WithMessage("'validToUtc' is required for Custom duration.");
+        RuleFor(x => x.ValidToUtc).GreaterThan(x => x.ValidFromUtc)
+            .When(x => x.DurationCode == "Custom" && x.ValidFromUtc.HasValue && x.ValidToUtc.HasValue)
             .WithMessage("'validToUtc' must be later than 'validFromUtc'.");
+        RuleFor(x => x.ValidToUtc).Must((x, to) => !to.HasValue || !x.ValidFromUtc.HasValue || to.Value <= x.ValidFromUtc.Value.AddYears(1))
+            .When(x => x.DurationCode == "Custom").WithMessage("A custom access duration cannot exceed one year.");
     }
 }
 
@@ -172,12 +267,18 @@ public sealed class UpdateAccessRequestRequestValidator : AbstractValidator<Upda
 {
     public UpdateAccessRequestRequestValidator()
     {
+        RuleFor(x => x.AccessType).OneOf(LookupValues.AccessTypes, "accessType");
+        RuleFor(x => x.BuildingLocationId).GreaterThan(0).WithMessage("'buildingLocationId' is required.");
         RuleFor(x => x.LocationId).GreaterThan(0).WithMessage("'locationId' is required.");
-        RuleFor(x => x.BusinessJustification).RequiredText("businessJustification", 1000)
-            .MinimumLength(10).WithMessage("'businessJustification' must be at least 10 characters.");
-        RuleFor(x => x.ValidFromUtc).NotNull().WithMessage("'validFromUtc' is required.");
-        RuleFor(x => x.ValidToUtc).NotNull().WithMessage("'validToUtc' is required.");
-        RuleFor(x => x.ValidToUtc).GreaterThan(x => x.ValidFromUtc).When(x => x.ValidFromUtc.HasValue && x.ValidToUtc.HasValue)
+        RuleFor(x => x.DurationCode).OneOf(LookupValues.DurationCodes, "durationCode");
+        RuleFor(x => x.Justification).RequiredText("justification", 1000)
+            .MinimumLength(10).WithMessage("'justification' must be at least 10 characters.");
+        RuleFor(x => x.ValidFromUtc).Must(x => !x.HasValue || x.Value >= DateTime.UtcNow.AddMinutes(-5))
+            .WithMessage("'validFromUtc' cannot be earlier than five minutes ago.");
+        RuleFor(x => x.ValidToUtc).NotNull().When(x => x.DurationCode == "Custom")
+            .WithMessage("'validToUtc' is required for Custom duration.");
+        RuleFor(x => x.ValidToUtc).GreaterThan(x => x.ValidFromUtc)
+            .When(x => x.DurationCode == "Custom" && x.ValidFromUtc.HasValue && x.ValidToUtc.HasValue)
             .WithMessage("'validToUtc' must be later than 'validFromUtc'.");
         RuleFor(x => x.Version).RequiredVersion();
     }

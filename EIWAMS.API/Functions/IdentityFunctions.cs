@@ -36,6 +36,22 @@ public sealed class IdentityFunctions(IServiceProvider services, IIdentityServic
     public async Task<IActionResult> GetMyMenu([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/me/menu")] HttpRequest req)
         => Ok(await service.GetMenuAsync());
 
+    [Function(nameof(Me_GetProfile))]
+    public async Task<IActionResult> Me_GetProfile([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/me/profile")] HttpRequest req)
+        => Ok(await service.GetMyProfileAsync());
+
+    [Function(nameof(Me_UpdateProfile))]
+    public async Task<IActionResult> Me_UpdateProfile([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "v1/me/profile")] HttpRequest req)
+        => Ok(await service.UpdateMyProfileAsync(await ReadBodyAsync<UpdateMyProfileRequest>(req)), ApiMessages.Updated);
+
+    [Function(nameof(Me_GetPhoto))]
+    public async Task<IActionResult> Me_GetPhoto([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/me/photo")] HttpRequest req)
+        => Ok(await service.GetMyPhotoAsync());
+
+    [Function(nameof(Me_PutPhoto))]
+    public async Task<IActionResult> Me_PutPhoto([HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "v1/me/photo")] HttpRequest req)
+        => Ok(await service.PutMyPhotoAsync(await ReadBodyAsync<PhotoUploadRequest>(req)), ApiMessages.Updated);
+
     [Function(nameof(GetLookups))]
     public async Task<IActionResult> GetLookups([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/lookups")] HttpRequest req)
         => Ok(await service.GetLookupsAsync());

@@ -9,7 +9,7 @@ Actions, Flex Consumption, App Service, Azure SQL) follow [AZURE-DEPLOYMENT.md](
 
 - [ ] .NET 10 SDK, Node 24, Azure Functions Core Tools 4, `sqlcmd`, IIS + URL Rewrite 2.1 + ARR 3.0, NSSM, optional `cloudflared`
 - [ ] EIWAMS-Web and EIWAMS-API registered ([ENTRA-SETUP.md](ENTRA-SETUP.md)); the production origin is a SPA redirect URI
-- [ ] Production users are provisioned in EIWAMS (`Admin > Users`) with roles and facility scope
+- [ ] Admin/service users are provisioned with roles and facility scope; employee accounts are linked from HRMS/Entra or JIT-provisioned on sign-in when an Active employee has a matching work email
 - [ ] Production settings file filled in and stored outside the repo ([ENVIRONMENT-VARIABLES.md](ENVIRONMENT-VARIABLES.md)), `Auth:Mode=EntraId`
 - [ ] Release build is green: `.\deploy\Build-All.ps1` (build, tests, publish API, Angular build into `deploy\out`)
 
@@ -27,7 +27,7 @@ Copy-Item C:\inetpub\EIWAMS C:\inetpub\EIWAMS.prev -Recurse -Force -ErrorAction 
 - [ ] `.\deploy\Deploy-Database.ps1` (parameters in the script header). It applies `EIWAMS.Infrastructure\SQL\01..12`
       in name order; scripts are idempotent. Skip demo data in production (see the script's switches).
 - [ ] Or with checksum tracking: `.\deploy\sql\Invoke-DbMigrations.ps1 -Server localhost -Database EIWAMS -Action plan -Authentication Integrated -TrustServerCertificate`, then `-Action apply`
-- [ ] Verify: `sqlcmd -S localhost -E -C -d EIWAMS -Q "SELECT COUNT(*) FROM dbo.Roles; SELECT COUNT(*) FROM dbo.Permissions; SELECT COUNT(*) FROM dbo.Menus"` returns 8 roles and the seeded permissions/menus
+- [ ] Verify: `sqlcmd -S localhost -E -C -d EIWAMS -Q "SELECT COUNT(*) FROM dbo.Roles; SELECT COUNT(*) FROM dbo.Permissions; SELECT COUNT(*) FROM dbo.Menus"` returns 11 roles and the seeded v2 permissions/menus
 - [ ] The API login has `db_datareader`, `db_datawriter` and `EXECUTE` only
 
 ## 3. API (Azure Functions host)
@@ -52,23 +52,24 @@ Copy-Item C:\inetpub\EIWAMS C:\inetpub\EIWAMS.prev -Recurse -Force -ErrorAction 
 
 ## 6. Smoke journey
 
-SDD 16.3 / TC-25: sign-in -> employee -> card issue/loss -> access request -> approvals -> permission -> RFID event ->
-audit/report. Use a test employee in a test location and record evidence (screenshots, correlation IDs).
+Use the seeded DevHeader users for local validation and test employees/locations for deployed environments.
+Employees already exist in HRMS/Entra ID: there is no employee-creation UI. Record evidence (screenshots and
+correlation IDs) and follow [API-CONTRACT.md](API-CONTRACT.md) for the full state/permission rules.
 
 | # | Actor | Step | Expected |
 |---|---|---|---|
-| S1 | any | Open the site | Microsoft sign-in, then Dashboard with the top navigation filtered by role |
-| S2 | non-provisioned account | Sign in | 403, no data |
-| S3 | HR Admin | People > Employees > create employee (test department/location, manager) | Employee saved, history row |
-| S4 | HR Admin | People > ID Cards > issue card, activate | Card `Active`, UID masked, `controllerSyncStatus` Synced |
-| S5 | Employee | Report the card lost | Card `Blocked` immediately, Lost card request created |
-| S6 | HR Admin / Security | Issue a replacement card | Old card deactivated, new card Active |
-| S7 | Employee | Access > Access Requests > request a restricted zone, submit | `PendingApproval`, stage Manager |
-| S8 | Manager -> Security -> Facility Admin | Access > Approvals > approve | Request `Approved`; in-app notifications created |
-| S9 | Facility Admin | Provision permission | Permission `Active`, request `Provisioned` |
-| S10 | Security | `POST /api/v1/rfid/events` (reader in the zone) | `Granted`; replaying the same `externalEventId` returns `isDuplicate: true`; the blocked old card is `Denied` with a violation |
-| S11 | Auditor | Insights > Audit Trail, Reports > export CSV | All actions above listed with correlation IDs; CSV downloads |
-| S12 | - | Send `X-User-Id` to the production API | Rejected |
+| S1 | any seeded user | Sign in and inspect the top navigation | Menus match the user's database-driven permissions; Auditor is read-only and no employee create/edit controls or routes are exposed |
+| S2 | Entra user with a matching Active employee `WorkEmail` | Sign in for the first time | JIT provisioning links the employee, grants Employee (and Manager when they have active direct reports), and records the audit event |
+| S3 | Entra user with no matching Active employee | Sign in | Access denied; no employee is created |
+| S4 | Kiran (14) | Complete My Profile, upload a valid photo, and raise a New ID card request | Profile fields save; photo is JPEG/PNG <= 1 MB; request starts at `PendingManager` |
+| S5 | Sai (11) -> Hari (2) -> Isha (12) | Approve -> verify -> approve; mark printed; issue | `PendingManager` -> `PendingHR` -> `PendingIdCardTeam` -> `Printing` -> `ReadyToIssue` -> `Closed`; new card is Active and UID is masked |
+| S6 | Kiran (14) -> Sai (11) -> Hari (2) -> Sanjay (4) -> Isha (12) | Raise and process a Lost request | Old card is blocked on request, proceeds through manager and HR to Security review, is deactivated at security approval, then the new card is printed and issued |
+| S7 | Esha (7) -> Meera (3) -> Sai (11) -> Farah (5) | Submit a Building access request and approve each stage | Manager -> SecurityHead -> AccessControl; status becomes Approved, then provisioning makes it Provisioned (shown as “Completed”) |
+| S8 | Esha (7) -> Meera (3) -> Sanjay (4) -> Farah (5) | Submit a Wing/Floor access request and approve each stage | Manager -> Security -> AccessControl; target wing/floor belongs to the selected building |
+| S9 | Arvind (13) | Provision an approved access request; then revoke a permission | Provisioning succeeds; revocation is reflected in the permission record |
+| S10 | any approver | Try to approve their own request; reject without a reason | Self-approval returns 403; rejection without comments is rejected |
+| S11 | authorized test user | Exercise allowed and blocked RFID swipes, review the resulting violation, inspect audit history/timeline and export a report | Decisions and violations are correct; workflow steps and notifications are present; audit entries include correlation IDs and CSV export succeeds |
+| S12 | - | Send `X-User-Id` to the production API | Rejected; DevHeader is local-development only |
 
 ## 7. Rollback
 

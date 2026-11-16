@@ -12,7 +12,6 @@ import { MatTableModule } from '@angular/material/table';
 import { Router, RouterLink } from '@angular/router';
 import { DatePipe } from '@angular/common';
 
-import { SessionService } from '../../core/services/session.service';
 import { FeatureLookups, PagedList, humanize } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS } from '../approvals/kit/ui.components';
 import { EmployeeListItem } from './employees.models';
@@ -29,11 +28,6 @@ import { EmployeesService } from './employees.service';
     <section class="page">
       <header class="page-header">
         <h1>Employees</h1>
-        <div class="page-actions">
-          @if (session.hasPermission('Employees.Manage')) {
-            <a mat-flat-button routerLink="new"><mat-icon>person_add</mat-icon>New employee</a>
-          }
-        </div>
       </header>
 
       <form class="filter-bar row g-2 align-items-center" [formGroup]="filters" (ngSubmit)="list.search()">
@@ -139,7 +133,6 @@ import { EmployeesService } from './employees.service';
 export class EmployeeListComponent {
   private readonly service = inject(EmployeesService);
   private readonly router = inject(Router);
-  readonly session = inject(SessionService);
   readonly lk = inject(FeatureLookups);
   readonly humanize = humanize;
   readonly columns = ['employeeNumber', 'fullName', 'departmentName', 'locationName', 'employeeType', 'joinDate', 'activeCardCount', 'employmentStatus'];

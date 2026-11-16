@@ -31,7 +31,7 @@ public class FunctionContractTests
             .ToList();
 
         Assert.Empty(unmapped);
-        Assert.Equal(87, Functions.Count);
+        Assert.Equal(97, Functions.Count);
     }
 
     [Fact]

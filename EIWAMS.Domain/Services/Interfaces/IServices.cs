@@ -21,6 +21,14 @@ public interface IIdentityService
 
     Task<LookupsDto> GetLookupsAsync();
 
+    Task<MyProfileDto> GetMyProfileAsync();
+
+    Task<MyProfileDto> UpdateMyProfileAsync(UpdateMyProfileRequest request);
+
+    Task<PhotoDto> GetMyPhotoAsync();
+
+    Task<PhotoInfoDto> PutMyPhotoAsync(PhotoUploadRequest request);
+
     Task<PagedResult<NotificationDto>> GetNotificationsAsync(NotificationQuery query);
 
     Task<CountDto> GetUnreadCountAsync();
@@ -47,6 +55,10 @@ public interface IEmployeeService
     Task<IReadOnlyList<CardDto>> GetCardsAsync(int employeeId);
 
     Task<IReadOnlyList<EmployeeHistoryDto>> GetHistoryAsync(int employeeId);
+
+    Task<PhotoDto> GetPhotoAsync(int employeeId);
+
+    Task<EmployeeSyncResultDto> SyncAsync(EmployeeSyncRequest request);
 }
 
 public interface ICardService
@@ -67,9 +79,13 @@ public interface ICardService
 
     Task<PagedResult<CardRequestDto>> SearchRequestsAsync(CardRequestQuery query);
 
-    Task<CardRequestDto> CreateRequestAsync(CreateCardRequestRequest request);
+    Task<PagedResult<CardRequestDto>> QueueRequestsAsync(CardRequestQueueQuery query);
 
-    Task<CardRequestDto> DecideRequestAsync(long cardRequestId, CardRequestDecisionRequest request);
+    Task<CardRequestDetailDto> GetRequestAsync(long cardRequestId);
+
+    Task<CardRequestDetailDto> CreateRequestAsync(CreateCardRequestRequest request);
+
+    Task<CardRequestDetailDto> DecideRequestAsync(long cardRequestId, CardRequestDecisionRequest request);
 }
 
 public interface IAccessService
@@ -86,7 +102,9 @@ public interface IAccessService
 
     Task<AccessRequestDetailDto> CancelRequestAsync(long accessRequestId, ReasonVersionRequest request);
 
-    Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(PagedQuery query);
+    Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ApprovalQueueQuery query);
+
+    Task<PagedResult<TeamRequestItemDto>> GetTeamApprovalsAsync(TeamRequestQuery query);
 
     Task<AccessRequestDetailDto> DecideAsync(long accessRequestId, ApprovalDecisionRequest request);
 
@@ -137,6 +155,8 @@ public interface IVisitorService
 
 public interface IInsightsService
 {
+    Task<HomeDashboardDto> GetHomeAsync();
+
     Task<DashboardSummaryDto> GetSummaryAsync();
 
     Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(int days);

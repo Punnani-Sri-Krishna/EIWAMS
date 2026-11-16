@@ -30,6 +30,40 @@ public sealed class IdentityService(IIdentityRepository repository, ICurrentUser
 
     public Task<LookupsDto> GetLookupsAsync() => repository.GetLookupsAsync(currentUser.GetActor());
 
+    public Task<MyProfileDto> GetMyProfileAsync() => repository.GetMyProfileAsync(currentUser.GetActor());
+
+    public Task<MyProfileDto> UpdateMyProfileAsync(UpdateMyProfileRequest request)
+        => repository.UpdateMyProfileAsync(currentUser.GetActor(), request);
+
+    public Task<PhotoDto> GetMyPhotoAsync() => repository.GetMyPhotoAsync(currentUser.GetActor());
+
+    public Task<PhotoInfoDto> PutMyPhotoAsync(PhotoUploadRequest request)
+    {
+        ValidatePhoto(request);
+        return repository.PutMyPhotoAsync(currentUser.GetActor(), request);
+    }
+
+    private static void ValidatePhoto(PhotoUploadRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.PhotoBase64) || string.IsNullOrWhiteSpace(request.PhotoContentType))
+            throw AppException.Validation(ApiMessages.ValidationFailed, ["photoContentType and photoBase64 are required."]);
+        string value = request.PhotoBase64.Trim();
+        int comma = value.IndexOf(',');
+        if (value.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0)
+            value = value[(comma + 1)..];
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(value); }
+        catch (FormatException) { throw AppException.Validation(ApiMessages.ValidationFailed, ["photoBase64 must be valid base64."]); }
+        bool signatureMatches = request.PhotoContentType switch
+        {
+            "image/jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+            "image/png" => bytes.Length >= 8 && bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A }),
+            _ => false
+        };
+        if (bytes.Length is < 1 or > 1_048_576 || !signatureMatches)
+            throw AppException.Validation(ApiMessages.ValidationFailed, ["Photo must be JPEG or PNG and no larger than 1 MB."]);
+    }
+
     public Task<PagedResult<NotificationDto>> GetNotificationsAsync(NotificationQuery query)
         => repository.SearchNotificationsAsync(currentUser.GetActor(), query);
 
@@ -72,6 +106,10 @@ public sealed class EmployeeService(IEmployeeRepository repository, ICurrentUser
     public Task<IReadOnlyList<CardDto>> GetCardsAsync(int employeeId) => repository.GetCardsAsync(currentUser.GetActor(), employeeId);
 
     public Task<IReadOnlyList<EmployeeHistoryDto>> GetHistoryAsync(int employeeId) => repository.GetHistoryAsync(currentUser.GetActor(), employeeId);
+
+    public Task<PhotoDto> GetPhotoAsync(int employeeId) => repository.GetPhotoAsync(currentUser.GetActor(), employeeId);
+
+    public Task<EmployeeSyncResultDto> SyncAsync(EmployeeSyncRequest request) => repository.SyncAsync(currentUser.GetActor(), request);
 }
 
 public sealed class CardService(ICardRepository repository, ICurrentUserAccessor currentUser, ILogger<CardService> logger) : ICardService
@@ -99,10 +137,24 @@ public sealed class CardService(ICardRepository repository, ICurrentUserAccessor
 
     public Task<PagedResult<CardRequestDto>> SearchRequestsAsync(CardRequestQuery query) => repository.SearchRequestsAsync(currentUser.GetActor(), query);
 
-    public Task<CardRequestDto> CreateRequestAsync(CreateCardRequestRequest request) => repository.CreateRequestAsync(currentUser.GetActor(), request);
+    public Task<PagedResult<CardRequestDto>> QueueRequestsAsync(CardRequestQueueQuery query)
+        => repository.QueueRequestsAsync(currentUser.GetActor(), query);
 
-    public Task<CardRequestDto> DecideRequestAsync(long cardRequestId, CardRequestDecisionRequest request)
-        => repository.DecideRequestAsync(currentUser.GetActor(), cardRequestId, request);
+    public Task<CardRequestDetailDto> GetRequestAsync(long cardRequestId)
+        => repository.GetRequestAsync(currentUser.GetActor(), cardRequestId);
+
+    public Task<CardRequestDetailDto> CreateRequestAsync(CreateCardRequestRequest request)
+        => repository.CreateRequestAsync(currentUser.GetActor(), request);
+
+    public Task<CardRequestDetailDto> DecideRequestAsync(long cardRequestId, CardRequestDecisionRequest request)
+    {
+        if (request.Action == "Reject" && string.IsNullOrWhiteSpace(request.Comments))
+        {
+            throw AppException.Validation(ApiMessages.ValidationFailed, ["Comments are required when rejecting a card request."]);
+        }
+
+        return repository.DecideRequestAsync(currentUser.GetActor(), cardRequestId, request);
+    }
 }
 
 public sealed class AccessService(IAccessRepository repository, ICurrentUserAccessor currentUser, ILogger<AccessService> logger) : IAccessService
@@ -122,7 +174,9 @@ public sealed class AccessService(IAccessRepository repository, ICurrentUserAcce
     public Task<AccessRequestDetailDto> CancelRequestAsync(long accessRequestId, ReasonVersionRequest request)
         => repository.CancelRequestAsync(currentUser.GetActor(), accessRequestId, request.Reason!.Trim(), request.Version!);
 
-    public Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(PagedQuery query) => repository.GetPendingApprovalsAsync(currentUser.GetActor(), query);
+    public Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ApprovalQueueQuery query) => repository.GetPendingApprovalsAsync(currentUser.GetActor(), query);
+
+    public Task<PagedResult<TeamRequestItemDto>> GetTeamApprovalsAsync(TeamRequestQuery query) => repository.GetTeamApprovalsAsync(currentUser.GetActor(), query);
 
     public async Task<AccessRequestDetailDto> DecideAsync(long accessRequestId, ApprovalDecisionRequest request)
     {
@@ -210,6 +264,8 @@ public sealed class VisitorService(IVisitorRepository repository, ICurrentUserAc
 
 public sealed class InsightsService(IInsightsRepository repository, ICurrentUserAccessor currentUser) : IInsightsService
 {
+    public Task<HomeDashboardDto> GetHomeAsync() => repository.GetHomeAsync(currentUser.GetActor());
+
     public Task<DashboardSummaryDto> GetSummaryAsync() => repository.GetSummaryAsync(currentUser.GetActor());
 
     public Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(int days) => repository.GetEventsTrendAsync(currentUser.GetActor(), Math.Clamp(days, 1, 90));

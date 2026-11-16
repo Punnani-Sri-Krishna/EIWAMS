@@ -4,8 +4,8 @@ using Microsoft.Data.SqlClient;
 namespace EIWAMS.Tests.Integration;
 
 /// <summary>
-/// Creates a fresh test database (catalog name must end in "_Test") once per test run and deploys
-/// SQL scripts 01-12 (schema, procedures, seed and demo data). Connection string comes from the
+/// Creates a fresh test database (catalog name must end in "_Test") once per test run and applies
+/// SQL scripts 01-12 twice to verify idempotence. Connection string comes from the
 /// EIWAMS_TEST_CONNECTION environment variable, falling back to the local default instance.
 /// </summary>
 public static partial class TestDatabase
@@ -62,11 +62,14 @@ public static partial class TestDatabase
 
         await using var db = new SqlConnection(ConnectionString);
         await db.OpenAsync();
-        foreach (string script in scripts)
+        for (int pass = 0; pass < 2; pass++)
         {
-            foreach (string batch in GoSeparator().Split(await File.ReadAllTextAsync(script)).Where(b => !string.IsNullOrWhiteSpace(b)))
+            foreach (string script in scripts)
             {
-                await ExecuteAsync(db, batch);
+                foreach (string batch in GoSeparator().Split(await File.ReadAllTextAsync(script)).Where(b => !string.IsNullOrWhiteSpace(b)))
+                {
+                    await ExecuteAsync(db, batch);
+                }
             }
         }
 

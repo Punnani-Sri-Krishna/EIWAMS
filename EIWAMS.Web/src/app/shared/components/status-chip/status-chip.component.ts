@@ -1,6 +1,6 @@
 import { ChangeDetectionStrategy, Component, computed, input } from '@angular/core';
 import { MatIconModule } from '@angular/material/icon';
-import { statusIcon, statusTone } from '../../utils/status-tone';
+import { StatusKind, statusIcon, statusLabel, statusTone } from '../../utils/status-tone';
 
 @Component({
   selector: 'app-status-chip',
@@ -15,10 +15,9 @@ import { statusIcon, statusTone } from '../../utils/status-tone';
 })
 export class StatusChipComponent {
   readonly status = input<string | null | undefined>('');
+  readonly kind = input<StatusKind>('generic');
 
-  protected readonly tone = computed(() => statusTone(this.status()));
-  protected readonly icon = computed(() => statusIcon(this.status()));
-  protected readonly label = computed(() =>
-    (this.status() ?? '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' '),
-  );
+  protected readonly tone = computed(() => statusTone(this.status(), this.kind()));
+  protected readonly icon = computed(() => statusIcon(this.status(), this.kind()));
+  protected readonly label = computed(() => statusLabel(this.status(), this.kind()));
 }

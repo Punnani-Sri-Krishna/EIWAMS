@@ -30,102 +30,170 @@
       }
       <button mat-flat-button type="button" (click)="load()">Try again</button>
     </div>
-  } @else if (summary()) {
-    <section class="kpi-grid" aria-label="Key figures">
-      @for (tile of tiles(); track tile.label) {
-        <div class="kpi-card" [class]="'kpi-card kpi-' + tile.tone">
-          <mat-icon aria-hidden="true">{{ tile.icon }}</mat-icon>
-          <div>
-            <div class="kpi-value num">{{ tile.value }}</div>
-            <div class="kpi-label">{{ tile.label }}</div>
-            @if (tile.hint) {
-              <div class="kpi-hint">{{ tile.hint }}</div>
-            }
-          </div>
-        </div>
+  } @else if (home(); as data) {
+    <section class="quick-actions" aria-label="Quick actions">
+      @if (session.hasPermission('Cards.Request')) {
+        <a mat-flat-button routerLink="/cards/requests/new"><mat-icon>badge</mat-icon>Raise ID card request</a>
+      }
+      @if (session.hasPermission('AccessRequests.Create')) {
+        <a mat-stroked-button routerLink="/access-requests/new"><mat-icon>vpn_key</mat-icon>Raise access request</a>
+      }
+      @if (session.hasPermission('Cards.View')) {
+        <a mat-stroked-button routerLink="/my-requests"><mat-icon>assignment</mat-icon>My requests</a>
       }
     </section>
 
-    <section class="chart-grid">
-      <div class="data-card chart-card wide">
-        <h2>Access events — last 14 days</h2>
-        @if (hasTrend()) {
-          <div class="chart-box"><canvas #trendCanvas aria-label="Access events trend" role="img"></canvas></div>
-        } @else {
-          <div class="empty-state"><mat-icon>show_chart</mat-icon><p>No access events recorded yet.</p></div>
-        }
-      </div>
-      <div class="data-card chart-card">
-        <h2>Access requests by status</h2>
-        @if (hasRequests()) {
-          <div class="chart-box"><canvas #requestsCanvas aria-label="Access requests by status" role="img"></canvas></div>
-        } @else {
-          <div class="empty-state"><mat-icon>donut_large</mat-icon><p>No access requests.</p></div>
-        }
-      </div>
-      <div class="data-card chart-card">
-        <h2>Violations by type</h2>
-        @if (hasViolations()) {
-          <div class="chart-box"><canvas #violationsCanvas aria-label="Violations by type" role="img"></canvas></div>
-        } @else {
-          <div class="empty-state"><mat-icon>verified</mat-icon><p>No violations recorded.</p></div>
-        }
-      </div>
-    </section>
-
-    <section class="list-grid">
-      <div class="data-card">
-        <h2>My work</h2>
-        @for (item of myWork(); track item.itemType + item.referenceId) {
-          <a class="list-row" [routerLink]="item.route || null">
-            <div>
-              <div class="row-title">{{ item.title || item.itemType }}</div>
-              <div class="row-meta">
-                {{ item.itemType }}
-                @if (item.referenceNumber) { · {{ item.referenceNumber }} }
-                @if (item.createdAtUtc) { · {{ item.createdAtUtc | date: 'd MMM, HH:mm' }} }
-              </div>
-            </div>
-            @if (item.status) {
-              <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status)">
-                <mat-icon>{{ statusIcon(item.status) }}</mat-icon>{{ item.status }}
-              </span>
-            }
-          </a>
-        } @empty {
-          <div class="empty-state"><mat-icon>inbox</mat-icon><p>You're all caught up.</p></div>
-        }
-      </div>
-
-      <div class="data-card">
-        <h2>Recent activity</h2>
-        @for (a of activity(); track a.auditLogId) {
-          <div class="list-row">
-            <div>
-              <div class="row-title">{{ a.summary || a.action }}</div>
-              <div class="row-meta">
-                {{ a.actorName || 'System' }}
-                @if (a.entityType) { · {{ a.entityType }} {{ a.entityId }} }
-                · {{ a.occurredAtUtc | date: 'd MMM, HH:mm' }}
-              </div>
-            </div>
+    <section class="home-grid" aria-label="Requests and work queues">
+      @for (card of homeCards(); track card.key) {
+        <article class="data-card home-card">
+          <div class="home-card-heading">
+            <h2><mat-icon aria-hidden="true">{{ card.icon }}</mat-icon>{{ card.title }}</h2>
+            <span class="home-count num">{{ card.count }}</span>
           </div>
-        } @empty {
-          <div class="empty-state"><mat-icon>history</mat-icon><p>No recent activity.</p></div>
-        }
-      </div>
-
-      @if (occupancy().length) {
-        <div class="data-card">
-          <h2>Occupancy</h2>
-          @for (o of occupancy(); track o.locationId) {
-            <div class="list-row">
-              <div class="row-title">{{ o.locationName }}</div>
-              <span class="num">{{ o.onSite }}</span>
+          <p class="home-detail">{{ card.detail }}</p>
+          @for (item of card.items; track item.requestKind + item.requestId) {
+            @if (canOpenItem(item)) {
+              <a class="home-item" [routerLink]="item.route">
+                <span class="home-item-copy">
+                  <strong>{{ item.requestNumber }}</strong>
+                  <small>{{ item.employeeName || 'You' }} · {{ item.requestType }}</small>
+                </span>
+                <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request')">
+                  <mat-icon aria-hidden="true">{{ statusIcon(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}</mat-icon>
+                  {{ statusLabel(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}
+                </span>
+              </a>
+            } @else {
+              <div class="home-item" aria-label="Request">
+                <span class="home-item-copy">
+                  <strong>{{ item.requestNumber }}</strong>
+                  <small>{{ item.employeeName || 'You' }} · {{ item.requestType }}</small>
+                </span>
+                <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request')">
+                  <mat-icon aria-hidden="true">{{ statusIcon(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}</mat-icon>
+                  {{ statusLabel(item.status, item.requestKind === 'Card' ? 'card-request' : 'access-request') }}
+                </span>
+              </div>
+            }
+          } @empty {
+            <div class="home-empty">
+              {{ card.key === 'myRequests' ? 'No recent requests.' : card.key === 'reports' ? 'Open request count across your reporting scope.' : 'No items currently waiting.' }}
             </div>
           }
-        </div>
+          @if (card.key !== 'myRequests' || session.hasPermission('Cards.View')) {
+            <a class="home-link" [routerLink]="card.route">
+              {{ card.key === 'myRequests' ? 'View my requests' : card.key === 'reports' ? 'Open reports' : 'Open queue' }}
+              <mat-icon aria-hidden="true">arrow_forward</mat-icon>
+            </a>
+          }
+        </article>
       }
     </section>
+
+    @if (canReports) {
+      @if (summary(); as s) {
+        <section class="analytics" aria-label="Analytics dashboard">
+          <h2 class="section-title"><mat-icon>analytics</mat-icon>Insights</h2>
+          <section class="kpi-grid" aria-label="Key figures">
+            @for (tile of tiles(); track tile.label) {
+              <div class="kpi-card" [class]="'kpi-card kpi-' + tile.tone">
+                <mat-icon aria-hidden="true">{{ tile.icon }}</mat-icon>
+                <div>
+                  <div class="kpi-value num">{{ tile.value }}</div>
+                  <div class="kpi-label">{{ tile.label }}</div>
+                  @if (tile.hint) { <div class="kpi-hint">{{ tile.hint }}</div> }
+                </div>
+              </div>
+            }
+          </section>
+
+          <section class="chart-grid">
+            <div class="data-card chart-card wide">
+              <h2>Access events — last 14 days</h2>
+              @if (hasTrend()) {
+                <div class="chart-box"><canvas #trendCanvas aria-label="Access events trend" role="img"></canvas></div>
+              } @else {
+                <div class="empty-state"><mat-icon>show_chart</mat-icon><p>No access events recorded yet.</p></div>
+              }
+            </div>
+            <div class="data-card chart-card">
+              <h2>Access requests by status</h2>
+              @if (hasRequests()) {
+                <div class="chart-box"><canvas #requestsCanvas aria-label="Access requests by status" role="img"></canvas></div>
+              } @else {
+                <div class="empty-state"><mat-icon>donut_large</mat-icon><p>No access requests.</p></div>
+              }
+            </div>
+            <div class="data-card chart-card">
+              <h2>Violations by type</h2>
+              @if (hasViolations()) {
+                <div class="chart-box"><canvas #violationsCanvas aria-label="Violations by type" role="img"></canvas></div>
+              } @else {
+                <div class="empty-state"><mat-icon>verified</mat-icon><p>No violations recorded.</p></div>
+              }
+            </div>
+          </section>
+
+          <section class="list-grid">
+            <div class="data-card">
+              <h2>My work</h2>
+              @for (item of myWork(); track item.itemType + item.referenceId) {
+                <a class="list-row" [routerLink]="item.route || null">
+                  <div>
+                    <div class="row-title">{{ item.title || item.itemType }}</div>
+                    <div class="row-meta">
+                      {{ item.itemType }}
+                      @if (item.referenceNumber) { · {{ item.referenceNumber }} }
+                      @if (item.createdAtUtc) { · {{ item.createdAtUtc | date: 'd MMM, HH:mm' }} }
+                    </div>
+                  </div>
+                  @if (item.status) {
+                    <span class="status-chip" [class]="'status-chip tone-' + statusTone(item.status)">
+                      <mat-icon>{{ statusIcon(item.status) }}</mat-icon>{{ item.status }}
+                    </span>
+                  }
+                </a>
+              } @empty {
+                <div class="empty-state"><mat-icon>inbox</mat-icon><p>No recent work.</p></div>
+              }
+            </div>
+
+            <div class="data-card">
+              <h2>Recent activity</h2>
+              @for (a of activity(); track a.auditLogId) {
+                <div class="list-row">
+                  <div>
+                    <div class="row-title">{{ a.summary || a.action }}</div>
+                    <div class="row-meta">
+                      {{ a.actorName || 'System' }}
+                      @if (a.entityType) { · {{ a.entityType }} {{ a.entityId }} }
+                      · {{ a.occurredAtUtc | date: 'd MMM, HH:mm' }}
+                    </div>
+                  </div>
+                </div>
+              } @empty {
+                <div class="empty-state"><mat-icon>history</mat-icon><p>No recent activity.</p></div>
+              }
+            </div>
+
+            @if (occupancy().length) {
+              <div class="data-card">
+                <h2>Occupancy</h2>
+                @for (o of occupancy(); track o.locationId) {
+                  <div class="list-row">
+                    <div class="row-title">{{ o.locationName }}</div>
+                    <span class="num">{{ o.onSite }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </section>
+        </section>
+      } @else if (!loading()) {
+        <div class="empty-state"><mat-icon>analytics</mat-icon><p>Analytics are unavailable right now.</p></div>
+      }
+    }
+  } @else if (!loading()) {
+    <div class="empty-state"><mat-icon>space_dashboard</mat-icon><p>No dashboard data is available.</p></div>
   }
 </div>

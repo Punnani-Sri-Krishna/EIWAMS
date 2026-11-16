@@ -48,7 +48,7 @@ public static class HttpConstants
     // Authenticated-only functions: no permission code, but a valid active user is required (except anonymous ones).
     public static readonly string[] NoPermissionFunctions =
     [
-        "GetAuthConfig", "GetDevUsers", "GetMe", "GetMyMenu", "GetLookups", "GetLocations", "GetAuditTimeline",
+        "GetAuthConfig", "GetDevUsers", "GetMe", "GetMyMenu", "Me_GetProfile", "Me_UpdateProfile", "Me_GetPhoto", "Me_PutPhoto", "GetLookups", "GetLocations", "GetAuditTimeline",
         "GetNotifications", "GetUnreadNotificationCount", "MarkNotificationRead", "MarkAllNotificationsRead",
     ];
 }
@@ -86,16 +86,22 @@ public static class Permissions
     public const string EmployeesManage = "Employees.Manage";
     public const string EmployeesTransfer = "Employees.Transfer";
     public const string EmployeesDeactivate = "Employees.Deactivate";
+    public const string EmployeesSync = "Employees.Sync";
     public const string CardsView = "Cards.View";
     public const string CardsViewAll = "Cards.ViewAll";
     public const string CardsRequest = "Cards.Request";
     public const string CardsVerify = "Cards.Verify";
+    public const string CardsManagerApprove = "Cards.ManagerApprove";
+    public const string CardsHrVerify = "Cards.HrVerify";
+    public const string CardsSecurityReview = "Cards.SecurityReview";
+    public const string CardsProcess = "Cards.Process";
     public const string CardsIssue = "Cards.Issue";
     public const string CardsBlock = "Cards.Block";
     public const string AccessRequestsView = "AccessRequests.View";
     public const string AccessRequestsViewAll = "AccessRequests.ViewAll";
     public const string AccessRequestsCreate = "AccessRequests.Create";
     public const string ApprovalsDecide = "Approvals.Decide";
+    public const string ApprovalsTeam = "Approvals.Team";
     public const string PermissionsView = "Permissions.View";
     public const string PermissionsProvision = "Permissions.Provision";
     public const string PermissionsRevoke = "Permissions.Revoke";
@@ -128,10 +134,16 @@ public static class LookupValues
     public static readonly string[] CardTypes = ["Permanent", "Temporary"];
     public static readonly string[] CardStatuses = ["Requested", "Active", "Lost", "Blocked", "Damaged", "Expired", "Deactivated"];
     public static readonly string[] CardRequestTypes = ["New", "Lost", "Damaged", "Replacement", "Temporary"];
-    public static readonly string[] CardRequestStatuses = ["Submitted", "VerificationPending", "Approved", "Issued", "Rejected", "Cancelled"];
-    public static readonly string[] CardRequestDecisions = ["Verify", "Approve", "Reject"];
+    public static readonly string[] CardRequestStatuses = ["PendingManager", "PendingHR", "PendingSecurity", "PendingIdCardTeam", "Printing", "ReadyToIssue", "Closed", "Rejected", "Cancelled"];
+    public static readonly string[] CardRequestTypesOffered = ["New", "Lost", "Damaged"];
+    public static readonly string[] CardRequestStages = ["Manager", "HR", "Security", "IdCardTeam"];
+    public static readonly string[] CardRequestActions = ["Approve", "Reject", "Verify", "MarkPrinted", "Issue", "Cancel"];
+    public static readonly string[] DamagedReasons = ["Scratched", "Broken", "RfidNotWorking", "CardExpired", "PhotoNotVisible"];
+    public static readonly string[] BloodGroups = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+    public static readonly string[] AccessTypes = ["Building", "WingFloor"];
+    public static readonly string[] DurationCodes = ["OneWeek", "OneMonth", "ThreeMonths", "SixMonths", "OneYear", "Permanent", "Custom"];
     public static readonly string[] AccessRequestStatuses = ["Draft", "Submitted", "PendingApproval", "Returned", "Approved", "Rejected", "Cancelled", "Provisioned", "Expired"];
-    public static readonly string[] ApprovalStages = ["Manager", "Security", "FacilityAdmin"];
+    public static readonly string[] ApprovalStages = ["Manager", "SecurityHead", "Security", "AccessControl"];
     public static readonly string[] ApprovalDecisions = ["Approve", "Return", "Reject"];
     public static readonly string[] PermissionStatuses = ["Active", "Suspended", "Revoked", "Expired"];
     public static readonly string[] EventTypes = ["Entry", "Exit"];
@@ -142,7 +154,7 @@ public static class LookupValues
     public static readonly string[] IncidentTypes = ["UnauthorizedAccess", "Tailgating", "LostCard", "BlacklistHit", "EquipmentFault", "Other"];
     public static readonly string[] IncidentStatuses = ["Open", "UnderReview", "Confirmed", "FalsePositive", "Closed"];
     public static readonly string[] VisitorPassStatuses = ["PendingApproval", "Approved", "Active", "CheckedOut", "Expired", "Revoked"];
-    public static readonly string[] LocationTypes = ["Campus", "Building", "Floor", "Zone"];
+    public static readonly string[] LocationTypes = ["Campus", "Building", "Floor", "Wing", "Zone"];
     public static readonly string[] BlacklistSubjectTypes = ["Employee", "Visitor", "Card"];
     public static readonly string[] ReaderDirections = ["In", "Out", "Both"];
 }
@@ -172,6 +184,13 @@ public static class StoredProcedures
     public const string NotificationUnreadCount = "dbo.usp_Notification_UnreadCount";
     public const string NotificationMarkRead = "dbo.usp_Notification_MarkRead";
     public const string NotificationMarkAllRead = "dbo.usp_Notification_MarkAllRead";
+    public const string MeGetProfile = "dbo.usp_Me_GetProfile";
+    public const string MeUpdateProfile = "dbo.usp_Me_UpdateProfile";
+    public const string MeGetPhoto = "dbo.usp_Me_GetPhoto";
+    public const string MePutPhoto = "dbo.usp_Me_PutPhoto";
+    public const string EmployeeGetPhoto = "dbo.usp_Employee_GetPhoto";
+    public const string EmployeeSync = "dbo.usp_Employee_Sync";
+    public const string ApprovalTeamSearch = "dbo.usp_Approval_TeamSearch";
 
     public const string EmployeeSearch = "dbo.usp_Employee_Search";
     public const string EmployeeGet = "dbo.usp_Employee_Get";
@@ -192,6 +211,8 @@ public static class StoredProcedures
     public const string CardRequestSearch = "dbo.usp_CardRequest_Search";
     public const string CardRequestCreate = "dbo.usp_CardRequest_Create";
     public const string CardRequestDecide = "dbo.usp_CardRequest_Decide";
+    public const string CardRequestQueue = "dbo.usp_CardRequest_Queue";
+    public const string CardRequestGet = "dbo.usp_CardRequest_Get";
 
     public const string AccessRequestSearch = "dbo.usp_AccessRequest_Search";
     public const string AccessRequestGet = "dbo.usp_AccessRequest_Get";
@@ -224,6 +245,7 @@ public static class StoredProcedures
     public const string VisitorPassTransition = "dbo.usp_VisitorPass_Transition";
 
     public const string DashboardSummary = "dbo.usp_Dashboard_Summary";
+    public const string DashboardHome = "dbo.usp_Dashboard_Home";
     public const string DashboardEventsTrend = "dbo.usp_Dashboard_EventsTrend";
     public const string DashboardRequestsByStatus = "dbo.usp_Dashboard_RequestsByStatus";
     public const string DashboardViolationsByType = "dbo.usp_Dashboard_ViolationsByType";

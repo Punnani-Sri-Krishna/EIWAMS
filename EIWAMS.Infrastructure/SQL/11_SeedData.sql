@@ -20,16 +20,22 @@ INSERT @Perm VALUES
  (N'Employees.Manage',      N'Employees',   N'Create and update employee identity records'),
  (N'Employees.Transfer',    N'Employees',   N'Transfer employees between departments, managers and locations'),
  (N'Employees.Deactivate',  N'Employees',   N'Deactivate or exit employees (revokes cards and permissions)'),
+ (N'Employees.Sync',        N'Employees',   N'Synchronize employee records from HR systems'),
  (N'Cards.View',            N'Cards',       N'View own RFID cards and card requests'),
  (N'Cards.ViewAll',         N'Cards',       N'View all RFID cards within facility scope'),
  (N'Cards.Request',         N'Cards',       N'Raise card requests and report own cards lost'),
  (N'Cards.Verify',          N'Cards',       N'Verify, approve or reject card requests'),
+ (N'Cards.ManagerApprove',  N'Cards',       N'Approve card requests raised by direct reports'),
+ (N'Cards.HrVerify',        N'Cards',       N'Verify employee details for card requests'),
+ (N'Cards.SecurityReview',  N'Cards',       N'Review lost card requests'),
+ (N'Cards.Process',         N'Cards',       N'Approve, print and issue ID cards'),
  (N'Cards.Issue',           N'Cards',       N'Issue, activate and replace RFID cards'),
  (N'Cards.Block',           N'Cards',       N'Block or deactivate RFID cards'),
  (N'AccessRequests.View',   N'Access',      N'View own and related access requests'),
  (N'AccessRequests.ViewAll',N'Access',      N'View all access requests within facility scope'),
  (N'AccessRequests.Create', N'Access',      N'Create, edit, submit and cancel access requests'),
  (N'Approvals.Decide',      N'Access',      N'Approve, return or reject assigned access requests'),
+ (N'Approvals.Team',        N'Access',      N'View requests raised by direct reports'),
  (N'Permissions.View',      N'Permissions', N'View access permissions'),
  (N'Permissions.Provision', N'Permissions', N'Provision approved access requests'),
  (N'Permissions.Revoke',    N'Permissions', N'Revoke access permissions'),
@@ -68,10 +74,13 @@ INSERT @Role VALUES
  (5, N'FacilityAdmin', N'Facility administrator: final approval, provisioning, readers and visitors'),
  (6, N'Reception',     N'Reception desk: visitor registration and passes'),
  (7, N'SystemAdmin',   N'System administrator: full access'),
- (8, N'Auditor',       N'Read-only auditor across all facilities');
+ (8, N'Auditor',       N'Read-only auditor across all facilities'),
+ (9, N'SecurityHead', N'Approves building access and reviews security-sensitive card requests'),
+ (10, N'IdCardTeam', N'Processes, prints and issues ID cards'),
+ (11, N'AccessControlTeam', N'Approves and provisions workplace access');
 
 DECLARE @k INT = 1;
-WHILE @k <= 8
+WHILE @k <= 11
 BEGIN
     DECLARE @rn NVARCHAR(50), @rd NVARCHAR(300);
     SELECT @rn = RoleName, @rd = Description FROM @Role WHERE SortKey = @k;
@@ -89,11 +98,15 @@ INSERT @Base VALUES (N'Dashboard.View'), (N'Employees.View'), (N'Cards.View'), (
 
 INSERT @Grant SELECT N'Employee', PermissionCode FROM @Base;
 INSERT @Grant SELECT r.RoleName, b.PermissionCode FROM @Base b CROSS JOIN (VALUES (N'Manager'), (N'HRAdmin'), (N'SecurityTeam'), (N'FacilityAdmin')) r (RoleName);
+INSERT @Grant SELECT r.RoleName, N'Dashboard.View' FROM (VALUES (N'SecurityHead'), (N'IdCardTeam'), (N'AccessControlTeam')) r (RoleName);
 INSERT @Grant VALUES
  (N'Manager', N'Approvals.Decide'), (N'Manager', N'Permissions.View'), (N'Manager', N'Reports.View'),
+ (N'Manager', N'Approvals.Team'), (N'Manager', N'Cards.ManagerApprove'),
  (N'HRAdmin', N'Employees.ViewAll'), (N'HRAdmin', N'Employees.Manage'), (N'HRAdmin', N'Employees.Transfer'), (N'HRAdmin', N'Employees.Deactivate'),
- (N'HRAdmin', N'Cards.ViewAll'), (N'HRAdmin', N'Cards.Issue'), (N'HRAdmin', N'Reports.View'), (N'HRAdmin', N'Reports.Export'),
+ (N'HRAdmin', N'Employees.Sync'), (N'HRAdmin', N'Cards.ViewAll'), (N'HRAdmin', N'Cards.Issue'), (N'HRAdmin', N'Reports.View'), (N'HRAdmin', N'Reports.Export'),
+ (N'HRAdmin', N'Cards.HrVerify'),
  (N'SecurityTeam', N'Cards.ViewAll'), (N'SecurityTeam', N'Cards.Verify'), (N'SecurityTeam', N'Cards.Block'), (N'SecurityTeam', N'Cards.Issue'),
+ (N'SecurityTeam', N'Cards.SecurityReview'),
  (N'SecurityTeam', N'Approvals.Decide'), (N'SecurityTeam', N'Permissions.View'), (N'SecurityTeam', N'Permissions.Revoke'),
  (N'SecurityTeam', N'Rfid.View'), (N'SecurityTeam', N'Rfid.Ingest'), (N'SecurityTeam', N'Violations.View'), (N'SecurityTeam', N'Violations.Review'),
  (N'SecurityTeam', N'Incidents.View'), (N'SecurityTeam', N'Incidents.Manage'), (N'SecurityTeam', N'Blacklist.View'), (N'SecurityTeam', N'Blacklist.Manage'),
@@ -101,6 +114,10 @@ INSERT @Grant VALUES
  (N'FacilityAdmin', N'Approvals.Decide'), (N'FacilityAdmin', N'Permissions.View'), (N'FacilityAdmin', N'Permissions.Provision'),
  (N'FacilityAdmin', N'Permissions.Revoke'), (N'FacilityAdmin', N'Rfid.View'), (N'FacilityAdmin', N'Visitors.View'), (N'FacilityAdmin', N'Visitors.Approve'),
  (N'FacilityAdmin', N'Reference.Manage'), (N'FacilityAdmin', N'Reports.View'),
+ (N'SecurityHead', N'AccessRequests.View'), (N'SecurityHead', N'Approvals.Decide'), (N'SecurityHead', N'Cards.SecurityReview'), (N'SecurityHead', N'Reports.View'),
+ (N'IdCardTeam', N'Cards.Process'), (N'IdCardTeam', N'Cards.ViewAll'), (N'IdCardTeam', N'Employees.View'),
+ (N'AccessControlTeam', N'AccessRequests.ViewAll'), (N'AccessControlTeam', N'Approvals.Decide'),
+ (N'AccessControlTeam', N'Permissions.View'), (N'AccessControlTeam', N'Permissions.Provision'),
  (N'Reception', N'Dashboard.View'), (N'Reception', N'Employees.View'), (N'Reception', N'Visitors.View'), (N'Reception', N'Visitors.Manage'),
  (N'Reception', N'Visitors.Approve'), (N'Reception', N'Rfid.View');
 INSERT @Grant SELECT N'SystemAdmin', PermissionCode FROM @Perm;

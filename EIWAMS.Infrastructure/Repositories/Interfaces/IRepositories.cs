@@ -24,6 +24,14 @@ public interface IIdentityRepository
 
     Task<LookupsDto> GetLookupsAsync(ActorContext actor);
 
+    Task<MyProfileDto> GetMyProfileAsync(ActorContext actor);
+
+    Task<MyProfileDto> UpdateMyProfileAsync(ActorContext actor, UpdateMyProfileRequest request);
+
+    Task<PhotoDto> GetMyPhotoAsync(ActorContext actor);
+
+    Task<PhotoInfoDto> PutMyPhotoAsync(ActorContext actor, PhotoUploadRequest request);
+
     Task<PagedResult<NotificationDto>> SearchNotificationsAsync(ActorContext actor, NotificationQuery query);
 
     Task<CountDto> GetUnreadNotificationCountAsync(ActorContext actor);
@@ -50,6 +58,10 @@ public interface IEmployeeRepository
     Task<IReadOnlyList<CardDto>> GetCardsAsync(ActorContext actor, int employeeId);
 
     Task<IReadOnlyList<EmployeeHistoryDto>> GetHistoryAsync(ActorContext actor, int employeeId);
+
+    Task<PhotoDto> GetPhotoAsync(ActorContext actor, int employeeId);
+
+    Task<EmployeeSyncResultDto> SyncAsync(ActorContext actor, EmployeeSyncRequest request);
 }
 
 public interface ICardRepository
@@ -70,9 +82,13 @@ public interface ICardRepository
 
     Task<PagedResult<CardRequestDto>> SearchRequestsAsync(ActorContext actor, CardRequestQuery query);
 
-    Task<CardRequestDto> CreateRequestAsync(ActorContext actor, CreateCardRequestRequest request);
+    Task<PagedResult<CardRequestDto>> QueueRequestsAsync(ActorContext actor, CardRequestQueueQuery query);
 
-    Task<CardRequestDto> DecideRequestAsync(ActorContext actor, long cardRequestId, CardRequestDecisionRequest request);
+    Task<CardRequestDetailDto> GetRequestAsync(ActorContext actor, long cardRequestId);
+
+    Task<CardRequestDetailDto> CreateRequestAsync(ActorContext actor, CreateCardRequestRequest request);
+
+    Task<CardRequestDetailDto> DecideRequestAsync(ActorContext actor, long cardRequestId, CardRequestDecisionRequest request);
 }
 
 public interface IAccessRepository
@@ -89,7 +105,9 @@ public interface IAccessRepository
 
     Task<AccessRequestDetailDto> CancelRequestAsync(ActorContext actor, long accessRequestId, string reason, byte[] version);
 
-    Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ActorContext actor, PagedQuery query);
+    Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ActorContext actor, ApprovalQueueQuery query);
+
+    Task<PagedResult<TeamRequestItemDto>> GetTeamApprovalsAsync(ActorContext actor, TeamRequestQuery query);
 
     Task<AccessRequestDetailDto> DecideAsync(ActorContext actor, long accessRequestId, ApprovalDecisionRequest request);
 
@@ -140,6 +158,8 @@ public interface IVisitorRepository
 
 public interface IInsightsRepository
 {
+    Task<HomeDashboardDto> GetHomeAsync(ActorContext actor);
+
     Task<DashboardSummaryDto> GetSummaryAsync(ActorContext actor);
 
     Task<IReadOnlyList<EventsTrendDto>> GetEventsTrendAsync(ActorContext actor, int days);

@@ -41,7 +41,11 @@ public sealed class AccessFunctions(IServiceProvider services, IAccessService se
 
     [Function(nameof(GetPendingApprovals))]
     public async Task<IActionResult> GetPendingApprovals([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/approvals/pending")] HttpRequest req)
-        => Ok(await service.GetPendingApprovalsAsync(BindQuery<PagedQuery>(req)));
+        => Ok(await service.GetPendingApprovalsAsync(BindQuery<ApprovalQueueQuery>(req)));
+
+    [Function(nameof(Approvals_Team))]
+    public async Task<IActionResult> Approvals_Team([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/approvals/team")] HttpRequest req)
+        => Ok(await service.GetTeamApprovalsAsync(BindQuery<TeamRequestQuery>(req)));
 
     [Function(nameof(DecideApproval))]
     public async Task<IActionResult> DecideApproval(

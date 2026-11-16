@@ -27,7 +27,9 @@ Do not edit other agents' files; delegate. Never commit unless the user asks.
   Application Insights for telemetry.
 * Never build: email notifications, SMTP configuration, mail templates, reminder engine, escalation engine, storage
   accounts (except the one required by the Azure Functions host), blob storage, Azure Storage queues, file upload
-  management, microservices, event bus, service bus, Redis cache, background jobs, Hangfire, SignalR.
+  management, microservices, event bus, service bus, Redis cache, background jobs, Hangfire, SignalR, AI/agent/chatbot
+  features. Exception: employee photos are stored in SQL `VARBINARY(MAX)` (<= 1 MB, JPEG/PNG) and sent as base64 JSON
+  (contract §5.5) - never in blob storage.
 
 ## Cross-cutting contracts you maintain
 
@@ -56,14 +58,15 @@ cd EIWAMS.Web; npx ng build; npx ng test --watch=false
 
 Smoke journey (DevHeader users; details in `docs/DEPLOYMENT-CHECKLIST.md` and `docs/TEST-CASES.md`):
 
-1. Sign in as each user 1-8; menus match the role matrix; Auditor is read-only.
-2. Hari (HR Admin) creates an employee reporting to Meera.
-3. Card issue -> activate; report lost (card blocked) -> replacement issued; UID masked everywhere.
-4. Esha (Employee) raises a restricted-zone access request and submits it.
-5. Approvals: Meera (Manager) -> Sanjay (Security) -> Farah (Facility Admin); rejection path needs a reason.
-6. Permission provisioned for the approved zone/time window; revoke works.
-7. RFID event: allowed swipe is granted; blocked/expired/out-of-window swipe raises a violation; Sanjay reviews it.
-8. Audit log and timeline show every step with the correlation id; reports and CSV export match; notifications appear.
+1. Sign in as each user 1-15; menus match contract §4; Auditor is read-only; no employee create/edit UI.
+2. Kiran (14) completes My Profile (contact details + photo) and raises a New ID card request.
+3. Sai (11) approves -> Hari (2) verifies -> Isha (12) approves, marks printed, issues -> request Closed, card Active,
+   UID masked everywhere. A Lost request also passes Sanjay (4) security review (old card Deactivated).
+4. Esha (7) raises a Building access request (Manager -> SecurityHead -> AccessControl) and a Wing/Floor request
+   (Manager -> Security -> AccessControl); rejection needs a reason; self-approval returns 403.
+5. Arvind (13) provisions (shown as Completed); revoke works; Home dashboard sections match each role.
+6. RFID event: allowed swipe is granted; blocked/expired/out-of-window swipe raises a violation; Sanjay reviews it.
+7. Audit log and timeline show every step with the correlation id; reports and CSV export match; notifications appear.
 
 Validation before reporting done: every workflow YAML parses (`npx --yes js-yaml <file>`), every `.ps1` parses
 (`[System.Management.Automation.Language.Parser]::ParseFile`), Bicep builds when the CLI is available, and docs

@@ -22,6 +22,7 @@ public sealed class AccessRepository(IDbConnectionFactory factory) : RepositoryB
         {
             query.Status,
             query.CurrentStage,
+            query.AccessType,
             query.LocationId,
             query.EmployeeId,
             Mine = query.Mine ?? false,
@@ -37,19 +38,24 @@ public sealed class AccessRepository(IDbConnectionFactory factory) : RepositoryB
         => ReadDetailAsync(StoredProcedures.AccessRequestCreate, Write(actor, new
         {
             r.EmployeeId,
+            r.AccessType,
+            r.BuildingLocationId,
             r.LocationId,
-            BusinessJustification = r.BusinessJustification!.Trim(),
+            r.DurationCode,
+            BusinessJustification = r.Justification!.Trim(),
             r.ValidFromUtc,
             r.ValidToUtc,
-            r.Submit,
         }));
 
     public Task<AccessRequestDetailDto> UpdateRequestAsync(ActorContext actor, long accessRequestId, UpdateAccessRequestRequest r)
         => ReadDetailAsync(StoredProcedures.AccessRequestUpdate, Write(actor, new
         {
             AccessRequestId = accessRequestId,
+            r.AccessType,
+            r.BuildingLocationId,
             r.LocationId,
-            BusinessJustification = r.BusinessJustification!.Trim(),
+            r.DurationCode,
+            BusinessJustification = r.Justification!.Trim(),
             r.ValidFromUtc,
             r.ValidToUtc,
             r.Version,
@@ -61,8 +67,12 @@ public sealed class AccessRepository(IDbConnectionFactory factory) : RepositoryB
     public Task<AccessRequestDetailDto> CancelRequestAsync(ActorContext actor, long accessRequestId, string reason, byte[] version)
         => ReadDetailAsync(StoredProcedures.AccessRequestCancel, Write(actor, new { AccessRequestId = accessRequestId, Reason = reason, Version = version }));
 
-    public Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ActorContext actor, PagedQuery query)
-        => QueryPagedAsync<PendingApprovalDto>(StoredProcedures.ApprovalPending, Read(actor, new { query.Search }), query.Page, query.PageSize);
+    public Task<PagedResult<PendingApprovalDto>> GetPendingApprovalsAsync(ActorContext actor, ApprovalQueueQuery query)
+        => QueryPagedAsync<PendingApprovalDto>(StoredProcedures.ApprovalPending, Read(actor, new { query.Search, query.Stage }), query.Page, query.PageSize);
+
+    public Task<PagedResult<TeamRequestItemDto>> GetTeamApprovalsAsync(ActorContext actor, TeamRequestQuery query)
+        => QueryPagedAsync<TeamRequestItemDto>(StoredProcedures.ApprovalTeamSearch,
+            Read(actor, new { query.RequestKind, query.Status, query.Search }), query.Page, query.PageSize);
 
     public Task<AccessRequestDetailDto> DecideAsync(ActorContext actor, long accessRequestId, ApprovalDecisionRequest r)
         => ReadDetailAsync(StoredProcedures.ApprovalDecide, Write(actor, new
@@ -257,6 +267,13 @@ public sealed class VisitorRepository(IDbConnectionFactory factory) : Repository
 
 public sealed class InsightsRepository(IDbConnectionFactory factory) : RepositoryBase(factory), IInsightsRepository
 {
+    public async Task<HomeDashboardDto> GetHomeAsync(ActorContext actor)
+    {
+        string json = await QuerySingleAsync<string>(StoredProcedures.DashboardHome, Read(actor));
+        return JsonSerializer.Deserialize<HomeDashboardDto>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web))
+            ?? throw new InvalidOperationException("Dashboard home procedure returned an empty payload.");
+    }
+
     public Task<DashboardSummaryDto> GetSummaryAsync(ActorContext actor)
         => QuerySingleAsync<DashboardSummaryDto>(StoredProcedures.DashboardSummary, Read(actor));
 

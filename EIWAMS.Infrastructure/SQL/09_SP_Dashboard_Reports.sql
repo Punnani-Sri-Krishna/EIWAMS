@@ -565,3 +565,201 @@ BEGIN
     ORDER BY a.OccurredAtUtc DESC, a.AuditLogId DESC;
 END
 GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Dashboard_Home
+    @ActorUserId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @Now DATETIME2(3)=SYSUTCDATETIME(),
+            @MonthStart DATETIME2(3)=DATEFROMPARTS(YEAR(SYSUTCDATETIME()),MONTH(SYSUTCDATETIME()),1),
+            @ActorEmployeeId INT=(SELECT EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId);
+    CREATE TABLE #Own
+    (
+        RequestKind NVARCHAR(20),RequestId BIGINT,RequestNumber NVARCHAR(30),RequestType NVARCHAR(30),
+        EmployeeName NVARCHAR(201),EmployeeNumber NVARCHAR(30),Status NVARCHAR(30),CurrentStage NVARCHAR(30),
+        SubmittedAtUtc DATETIME2(3),Route NVARCHAR(200)
+    );
+    INSERT #Own
+    SELECT N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,
+           cr.Status,CASE cr.Status WHEN N'PendingManager' THEN N'Manager' WHEN N'PendingHR' THEN N'HR'
+              WHEN N'PendingSecurity' THEN N'Security' WHEN N'PendingIdCardTeam' THEN N'IdCardTeam'
+              WHEN N'Printing' THEN N'IdCardTeam' WHEN N'ReadyToIssue' THEN N'IdCardTeam' END,
+           cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+    FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+    WHERE cr.RequestedByUserId=@ActorUserId OR e.UserId=@ActorUserId;
+    INSERT #Own
+    SELECT N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,
+           ar.Status,ar.CurrentStage,COALESCE(ar.SubmittedAtUtc,ar.CreatedAtUtc),CONCAT(N'/access-requests/',ar.AccessRequestId)
+    FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+    WHERE ar.RequesterUserId=@ActorUserId OR e.UserId=@ActorUserId;
+
+    DECLARE @Recent NVARCHAR(MAX),@MyRequests NVARCHAR(MAX);
+    SELECT @Recent=(SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                           RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,
+                           Status AS status,CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                    FROM #Own ORDER BY SubmittedAtUtc DESC,RequestId DESC FOR JSON PATH);
+    SELECT @MyRequests=(SELECT COALESCE(SUM(CASE WHEN (RequestKind=N'Card' AND Status NOT IN (N'Closed',N'Rejected',N'Cancelled'))
+                                             OR (RequestKind=N'Access' AND Status IN (N'Draft',N'Submitted',N'PendingApproval',N'Returned',N'Approved'))
+                                        THEN 1 ELSE 0 END),0) AS [open],
+                               COALESCE(SUM(CASE WHEN (RequestKind=N'Card' AND Status IN (N'Closed',N'Rejected',N'Cancelled'))
+                                             OR (RequestKind=N'Access' AND Status NOT IN (N'Draft',N'Submitted',N'PendingApproval',N'Returned',N'Approved'))
+                                        THEN 1 ELSE 0 END),0) AS closed,
+                               JSON_QUERY(ISNULL(@Recent,N'[]')) AS recent
+                        FROM #Own FOR JSON PATH,WITHOUT_ARRAY_WRAPPER,INCLUDE_NULL_VALUES);
+
+    CREATE TABLE #Q
+    (
+        Section NVARCHAR(30),RequestKind NVARCHAR(20),RequestId BIGINT,RequestNumber NVARCHAR(30),RequestType NVARCHAR(30),
+        EmployeeName NVARCHAR(201),EmployeeNumber NVARCHAR(30),Status NVARCHAR(30),CurrentStage NVARCHAR(30),
+        SubmittedAtUtc DATETIME2(3),Route NVARCHAR(200)
+    );
+
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1
+    BEGIN
+        INSERT #Q
+        SELECT N'pendingManager',N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,cr.Status,N'Manager',cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+        FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+        LEFT JOIN dbo.Employees m ON m.EmployeeId=e.ManagerEmployeeId
+        WHERE cr.Status=N'PendingManager' AND e.UserId<>@ActorUserId
+          AND ((m.UserId=@ActorUserId AND e.ManagerEmployeeId=@ActorEmployeeId)
+               OR (m.UserId IS NULL AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1));
+        INSERT #Q
+        SELECT N'pendingManager',N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,
+               CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,ar.Status,ar.CurrentStage,
+               COALESCE(ar.SubmittedAtUtc,ar.CreatedAtUtc),CONCAT(N'/access-requests/',ar.AccessRequestId)
+        FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+        JOIN dbo.AccessRequestApprovals a ON a.AccessRequestId=ar.AccessRequestId AND a.Cycle=ar.Cycle
+             AND a.Stage=N'Manager' AND a.Decision=N'Pending'
+        JOIN dbo.AccessRequestApprovalAssignees x ON x.ApprovalId=a.ApprovalId AND x.UserId=@ActorUserId
+        WHERE ar.Status=N'PendingApproval' AND e.UserId<>@ActorUserId;
+    END
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify')=1
+        INSERT #Q
+        SELECT N'pendingHr',N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,cr.Status,N'HR',cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+        FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+        WHERE cr.Status=N'PendingHR' AND e.UserId<>@ActorUserId AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1;
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview')=1
+        INSERT #Q
+        SELECT N'pendingSecurity',N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,cr.Status,N'Security',cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+        FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+        WHERE cr.Status=N'PendingSecurity' AND e.UserId<>@ActorUserId AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1;
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.Process')=1
+        INSERT #Q
+        SELECT N'pendingIdCard',N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,cr.Status,N'IdCardTeam',cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+        FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+        WHERE cr.Status IN (N'PendingIdCardTeam',N'Printing',N'ReadyToIssue')
+          AND e.UserId<>@ActorUserId AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1;
+
+    IF dbo.fn_HasPermission(@ActorUserId,N'Approvals.Decide')=1
+        INSERT #Q
+        SELECT N'pendingAccessReview',N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,
+               CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,ar.Status,ar.CurrentStage,
+               COALESCE(ar.SubmittedAtUtc,ar.CreatedAtUtc),CONCAT(N'/access-requests/',ar.AccessRequestId)
+        FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+        JOIN dbo.AccessRequestApprovals a ON a.AccessRequestId=ar.AccessRequestId AND a.Cycle=ar.Cycle
+             AND a.Stage IN (N'SecurityHead',N'Security',N'AccessControl') AND a.Decision=N'Pending'
+        JOIN dbo.AccessRequestApprovalAssignees x ON x.ApprovalId=a.ApprovalId AND x.UserId=@ActorUserId
+        WHERE ar.Status=N'PendingApproval';
+    IF dbo.fn_HasPermission(@ActorUserId,N'Permissions.Provision')=1
+        INSERT #Q
+        SELECT N'pendingProvisioning',N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,
+               CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,ar.Status,NULL,
+               COALESCE(ar.DecidedAtUtc,ar.UpdatedAtUtc),CONCAT(N'/access-requests/',ar.AccessRequestId)
+        FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+        WHERE ar.Status=N'Approved' AND e.UserId<>@ActorUserId AND ar.RequesterUserId<>@ActorUserId
+          AND dbo.fn_UserCanAccessLocation(@ActorUserId,ar.LocationId)=1;
+    IF dbo.fn_HasPermission(@ActorUserId,N'Approvals.Team')=1 AND @ActorEmployeeId IS NOT NULL
+    BEGIN
+        INSERT #Q
+        SELECT N'teamRequests',N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,cr.Status,CASE cr.Status WHEN N'PendingManager' THEN N'Manager' WHEN N'PendingHR' THEN N'HR'
+                 WHEN N'PendingSecurity' THEN N'Security' WHEN N'PendingIdCardTeam' THEN N'IdCardTeam'
+                 WHEN N'Printing' THEN N'IdCardTeam' WHEN N'ReadyToIssue' THEN N'IdCardTeam' END,
+               cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+        FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+        WHERE e.ManagerEmployeeId=@ActorEmployeeId AND cr.Status NOT IN (N'Closed',N'Rejected',N'Cancelled')
+          AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1;
+        INSERT #Q
+        SELECT N'teamRequests',N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,CONCAT(e.FirstName,N' ',e.LastName),
+               e.EmployeeNumber,ar.Status,ar.CurrentStage,COALESCE(ar.SubmittedAtUtc,ar.CreatedAtUtc),
+               CONCAT(N'/access-requests/',ar.AccessRequestId)
+        FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+        WHERE e.ManagerEmployeeId=@ActorEmployeeId
+          AND ar.Status IN (N'Draft',N'Submitted',N'PendingApproval',N'Returned',N'Approved')
+          AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1;
+    END
+
+    DECLARE @PendingManager NVARCHAR(MAX),@PendingHr NVARCHAR(MAX),@PendingSecurity NVARCHAR(MAX),@PendingIdCard NVARCHAR(MAX),
+            @PendingAccessReview NVARCHAR(MAX),@PendingProvisioning NVARCHAR(MAX),@TeamRequests NVARCHAR(MAX),@Reports NVARCHAR(MAX);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1
+       SELECT @PendingManager=(SELECT COUNT(*) AS count,N'/approvals/manager' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingManager' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingManager' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify')=1
+       SELECT @PendingHr=(SELECT COUNT(*) AS count,N'/approvals/hr' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingHr' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingHr' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview')=1
+       SELECT @PendingSecurity=(SELECT COUNT(*) AS count,N'/approvals/security' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingSecurity' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingSecurity' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.Process')=1
+       SELECT @PendingIdCard=(SELECT COUNT(*) AS count,N'/approvals/id-card' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingIdCard' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingIdCard' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Approvals.Decide')=1
+       SELECT @PendingAccessReview=(SELECT COUNT(*) AS count,N'/approvals/access' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingAccessReview' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingAccessReview' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Permissions.Provision')=1
+       SELECT @PendingProvisioning=(SELECT COUNT(*) AS count,N'/permissions/provision' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'pendingProvisioning' ORDER BY SubmittedAtUtc,RequestId FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'pendingProvisioning' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Approvals.Team')=1
+       SELECT @TeamRequests=(SELECT COUNT(*) AS count,N'/approvals/team' AS route,
+           JSON_QUERY((SELECT TOP (5) RequestKind AS requestKind,RequestId AS requestId,RequestNumber AS requestNumber,
+                       RequestType AS requestType,EmployeeName AS employeeName,EmployeeNumber AS employeeNumber,Status AS status,
+                       CurrentStage AS currentStage,SubmittedAtUtc AS submittedAtUtc,Route AS route
+                       FROM #Q WHERE Section=N'teamRequests' ORDER BY SubmittedAtUtc DESC,RequestId DESC FOR JSON PATH)) AS [top]
+           FROM #Q WHERE Section=N'teamRequests' FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+    IF dbo.fn_HasPermission(@ActorUserId,N'Reports.View')=1
+       SELECT @Reports=(SELECT
+           (SELECT COUNT(*) FROM dbo.CardRequestHistory h WHERE h.ToStatus=N'Closed' AND h.CreatedAtUtc>=@MonthStart) AS cardsIssuedThisMonth,
+           (SELECT COUNT(*) FROM dbo.AccessPermissions p WHERE p.ProvisionedAtUtc>=@MonthStart) AS accessGrantedThisMonth,
+           (SELECT COUNT(*) FROM dbo.CardRequests cr JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+              WHERE cr.Status NOT IN (N'Closed',N'Rejected',N'Cancelled') AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1)
+           +(SELECT COUNT(*) FROM dbo.AccessRequests ar WHERE ar.Status IN (N'Draft',N'Submitted',N'PendingApproval',N'Returned',N'Approved')
+              AND dbo.fn_UserCanAccessLocation(@ActorUserId,ar.LocationId)=1) AS openRequests
+           FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+
+    SELECT (SELECT JSON_QUERY(@MyRequests) AS myRequests,
+                   JSON_QUERY(@PendingManager) AS pendingManager,JSON_QUERY(@PendingHr) AS pendingHr,
+                   JSON_QUERY(@PendingSecurity) AS pendingSecurity,JSON_QUERY(@PendingIdCard) AS pendingIdCard,
+                   JSON_QUERY(@PendingAccessReview) AS pendingAccessReview,JSON_QUERY(@PendingProvisioning) AS pendingProvisioning,
+                   JSON_QUERY(@TeamRequests) AS teamRequests,JSON_QUERY(@Reports) AS reports
+            FOR JSON PATH,WITHOUT_ARRAY_WRAPPER,INCLUDE_NULL_VALUES) AS Json;
+END
+GO

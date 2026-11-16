@@ -195,7 +195,9 @@ AS
 SELECT e.EmployeeId, e.EmployeeNumber, e.FirstName, e.LastName, CONCAT(e.FirstName, N' ', e.LastName) AS FullName, e.WorkEmail,
        e.EmployeeType, e.DepartmentId, d.DepartmentName, e.ManagerEmployeeId,
        CASE WHEN m.EmployeeId IS NULL THEN NULL ELSE CONCAT(m.FirstName, N' ', m.LastName) END AS ManagerName,
-       e.LocationId, l.LocationName, e.EmploymentStatus, e.JoinDate, e.EndDate,
+       e.LocationId, l.LocationName, e.EmploymentStatus, e.JoinDate, e.EndDate, e.Designation, e.MobileNumber, e.Address, e.BloodGroup,
+       e.EmergencyContactName, e.EmergencyContactNumber,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.EmployeePhotos ph WHERE ph.EmployeeId = e.EmployeeId) THEN 1 ELSE 0 END AS BIT) AS HasPhoto,
        (SELECT COUNT(*) FROM dbo.RFIDCards c WHERE c.EmployeeId = e.EmployeeId AND c.Status = N'Active'
             AND (c.ExpiresAtUtc IS NULL OR c.ExpiresAtUtc > SYSUTCDATETIME())) AS ActiveCardCount,
        e.UserId,
@@ -224,19 +226,38 @@ GO
 CREATE OR ALTER VIEW dbo.vw_CardRequests
 AS
 SELECT cr.CardRequestId, cr.RequestNumber, cr.RequestType, cr.EmployeeId, CONCAT(e.FirstName, N' ', e.LastName) AS EmployeeName,
-       e.EmployeeNumber, cr.OldCardId, cr.NewCardId, cr.Reason, cr.Status, cr.RequestedAtUtc, rq.DisplayName AS RequestedByName,
-       vf.DisplayName AS VerifiedByName, ap.DisplayName AS ApprovedByName, cr.DecidedAtUtc, cr.DecisionComments,
-       cr.RequestedValidToUtc, cr.RequestedByUserId, cr.Version
+       e.EmployeeNumber, e.Designation, d.DepartmentName,
+       CASE WHEN m.EmployeeId IS NULL THEN NULL ELSE CONCAT(m.FirstName, N' ', m.LastName) END AS ManagerName,
+       m.UserId AS ManagerUserId, e.ManagerEmployeeId, e.UserId AS EmployeeUserId, e.WorkEmail, l.LocationName, e.LocationId AS EmployeeLocationId,
+       cr.Reason, cr.Status,
+       CASE cr.Status WHEN N'PendingManager' THEN N'Manager' WHEN N'PendingHR' THEN N'HR' WHEN N'PendingSecurity' THEN N'Security'
+                      WHEN N'PendingIdCardTeam' THEN N'IdCardTeam' WHEN N'Printing' THEN N'IdCardTeam' WHEN N'ReadyToIssue' THEN N'IdCardTeam' END AS CurrentStage,
+       cr.OldCardId, dbo.fn_MaskCardUid(oc.CardUid) AS OldMaskedCardUid, cr.NewCardId, dbo.fn_MaskCardUid(nc.CardUid) AS NewMaskedCardUid,
+       cr.RequestedByUserId, rq.DisplayName AS RequestedByName, cr.RequestedAtUtc, cr.UpdatedAtUtc, cr.ClosedAtUtc,
+       vb.DisplayName AS VerifiedByName, ab.DisplayName AS ApprovedByName,
+       lh.ActorName AS LastActionByName, lh.CreatedAtUtc AS LastActionAtUtc, lh.Comments AS LastComments,
+       CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.EmployeePhotos ph WHERE ph.EmployeeId = cr.EmployeeId) THEN 1 ELSE 0 END AS BIT) AS HasPhoto,
+       cr.MobileNumber, cr.Address, cr.BloodGroup, cr.EmergencyContactName, cr.EmergencyContactNumber,
+       cr.DecidedAtUtc, cr.DecisionComments, cr.RequestedValidToUtc, cr.Version
 FROM dbo.CardRequests cr
 JOIN dbo.Employees e ON e.EmployeeId = cr.EmployeeId
+JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+JOIN dbo.Locations l ON l.LocationId = e.LocationId
 JOIN dbo.Users rq ON rq.UserId = cr.RequestedByUserId
-LEFT JOIN dbo.Users vf ON vf.UserId = cr.VerifiedByUserId
-LEFT JOIN dbo.Users ap ON ap.UserId = cr.ApprovedByUserId;
+LEFT JOIN dbo.Users vb ON vb.UserId = cr.VerifiedByUserId
+LEFT JOIN dbo.Users ab ON ab.UserId = cr.ApprovedByUserId
+LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId
+LEFT JOIN dbo.RFIDCards oc ON oc.CardId = cr.OldCardId
+LEFT JOIN dbo.RFIDCards nc ON nc.CardId = cr.NewCardId
+OUTER APPLY (SELECT TOP (1) h.CreatedAtUtc, h.Comments, u.DisplayName AS ActorName
+             FROM dbo.CardRequestHistory h LEFT JOIN dbo.Users u ON u.UserId = h.ActorUserId
+             WHERE h.CardRequestId = cr.CardRequestId ORDER BY h.CreatedAtUtc DESC, h.HistoryId DESC) lh;
 GO
 
 CREATE OR ALTER VIEW dbo.vw_AccessRequests
 AS
 SELECT ar.AccessRequestId, ar.RequestNumber, ar.EmployeeId, CONCAT(e.FirstName, N' ', e.LastName) AS EmployeeName, e.EmployeeNumber,
+       ar.AccessType, ar.BuildingLocationId, bl.LocationName AS BuildingLocationName, ar.DurationCode,
        ar.LocationId, l.LocationName, l.LocationCode, l.IsRestricted, ar.RequesterUserId, rq.DisplayName AS RequesterName,
        ar.BusinessJustification, ar.ValidFromUtc, ar.ValidToUtc, ar.Status, ar.CurrentStage,
        (SELECT STRING_AGG(u.DisplayName, N', ') WITHIN GROUP (ORDER BY u.DisplayName)
@@ -249,6 +270,7 @@ SELECT ar.AccessRequestId, ar.RequestNumber, ar.EmployeeId, CONCAT(e.FirstName, 
 FROM dbo.AccessRequests ar
 JOIN dbo.Employees e ON e.EmployeeId = ar.EmployeeId
 JOIN dbo.Locations l ON l.LocationId = ar.LocationId
+LEFT JOIN dbo.Locations bl ON bl.LocationId = ar.BuildingLocationId
 JOIN dbo.Users rq ON rq.UserId = ar.RequesterUserId;
 GO
 

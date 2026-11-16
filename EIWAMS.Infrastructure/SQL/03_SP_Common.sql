@@ -117,9 +117,16 @@ BEGIN
     WHERE UserId = @UserId AND IsActive = 1
       AND (LastLoginAtUtc IS NULL OR LastLoginAtUtc < DATEADD(MINUTE, -5, SYSUTCDATETIME()));
 
-    SELECT u.UserId, u.DisplayName, u.Email, u.IsActive, u.AllFacilities, e.EmployeeId, e.EmployeeNumber
+    SELECT u.UserId, u.DisplayName, u.Email, u.IsActive, u.AllFacilities, e.EmployeeId, e.EmployeeNumber,
+           e.Designation, d.DepartmentName,
+           CASE WHEN m.EmployeeId IS NULL THEN NULL ELSE CONCAT(m.FirstName, N' ', m.LastName) END AS ManagerName,
+           m.WorkEmail AS ManagerEmail, l.LocationName,
+           CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.EmployeePhotos ph WHERE ph.EmployeeId = e.EmployeeId) THEN 1 ELSE 0 END AS BIT) AS HasPhoto
     FROM dbo.Users u
     LEFT JOIN dbo.Employees e ON e.UserId = u.UserId
+    LEFT JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+    LEFT JOIN dbo.Locations l ON l.LocationId = e.LocationId
+    LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId
     WHERE u.UserId = @UserId;
 
     SELECT r.RoleName FROM dbo.UserRoles ur JOIN dbo.Roles r ON r.RoleId = ur.RoleId WHERE ur.UserId = @UserId ORDER BY r.RoleName;
@@ -130,7 +137,32 @@ BEGIN
 END
 GO
 
--- Resolves an Entra principal to an EIWAMS user: by object id, else by email (first sign-in links the object id).
+-- Automatic role grants (contract §4): Employee for users linked to an Active employee, Manager when the employee has
+-- at least one Active direct report. Roles are only ever added, never removed.
+CREATE OR ALTER PROCEDURE dbo.usp_Internal_GrantAutoRoles
+    @UserId INT = NULL   -- NULL = every linked user
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT dbo.UserRoles (UserId, RoleId)
+    SELECT DISTINCT e.UserId, r.RoleId
+    FROM dbo.Employees e
+    JOIN dbo.Roles r ON r.RoleName = N'Employee'
+    WHERE e.UserId IS NOT NULL AND e.EmploymentStatus = N'Active' AND (@UserId IS NULL OR e.UserId = @UserId)
+      AND NOT EXISTS (SELECT 1 FROM dbo.UserRoles x WHERE x.UserId = e.UserId AND x.RoleId = r.RoleId);
+
+    INSERT dbo.UserRoles (UserId, RoleId)
+    SELECT DISTINCT e.UserId, r.RoleId
+    FROM dbo.Employees e
+    JOIN dbo.Roles r ON r.RoleName = N'Manager'
+    WHERE e.UserId IS NOT NULL AND e.EmploymentStatus = N'Active' AND (@UserId IS NULL OR e.UserId = @UserId)
+      AND EXISTS (SELECT 1 FROM dbo.Employees s WHERE s.ManagerEmployeeId = e.EmployeeId AND s.EmploymentStatus = N'Active')
+      AND NOT EXISTS (SELECT 1 FROM dbo.UserRoles x WHERE x.UserId = e.UserId AND x.RoleId = r.RoleId);
+END
+GO
+
+-- Resolves an Entra principal to an EIWAMS user: by object id, else by email (first sign-in links the object id),
+-- else JIT-provisions a user for an Active employee whose WorkEmail matches.
 CREATE OR ALTER PROCEDURE dbo.usp_User_ResolveEntra
     @TenantId    UNIQUEIDENTIFIER,
     @ObjectId    UNIQUEIDENTIFIER,
@@ -141,15 +173,48 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
     DECLARE @UserId INT = (SELECT UserId FROM dbo.Users WHERE EntraObjectId = @ObjectId);
-    IF @UserId IS NULL AND NULLIF(LTRIM(RTRIM(@Email)), N'') IS NOT NULL
+    DECLARE @CleanEmail NVARCHAR(256) = NULLIF(LTRIM(RTRIM(@Email)), N'');
+    IF @UserId IS NULL AND @CleanEmail IS NOT NULL
     BEGIN
-        SELECT @UserId = UserId FROM dbo.Users WHERE Email = @Email AND EntraObjectId IS NULL;
+        SELECT @UserId = UserId FROM dbo.Users WHERE Email = @CleanEmail AND EntraObjectId IS NULL;
         IF @UserId IS NOT NULL
         BEGIN
             UPDATE dbo.Users SET EntraObjectId = @ObjectId, EntraTenantId = @TenantId, UpdatedAtUtc = SYSUTCDATETIME() WHERE UserId = @UserId;
             EXEC dbo.usp_Audit_Write @UserId, N'User.EntraLinked', N'User', @UserId, N'Entra identity linked on first sign-in.';
         END
     END
+
+    -- JIT provisioning (contract §5.5).
+    IF @UserId IS NULL AND @CleanEmail IS NOT NULL AND NOT EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @CleanEmail)
+    BEGIN
+        DECLARE @EmployeeId INT, @Name NVARCHAR(150);
+        SELECT TOP (1) @EmployeeId = e.EmployeeId, @Name = CONCAT(e.FirstName, N' ', e.LastName)
+        FROM dbo.Employees e
+        WHERE e.WorkEmail = @CleanEmail AND e.EmploymentStatus = N'Active' AND e.UserId IS NULL
+        ORDER BY e.EmployeeId;
+
+        IF @EmployeeId IS NOT NULL
+        BEGIN
+            BEGIN TRY
+                BEGIN TRAN;
+                INSERT dbo.Users (DisplayName, Email, EntraTenantId, EntraObjectId, IsActive, AllFacilities)
+                VALUES (LEFT(ISNULL(NULLIF(LTRIM(RTRIM(@DisplayName)), N''), @Name), 150), @CleanEmail, @TenantId, @ObjectId, 1, 0);
+                SET @UserId = SCOPE_IDENTITY();
+                UPDATE dbo.Employees SET UserId = @UserId, UpdatedAtUtc = SYSUTCDATETIME() WHERE EmployeeId = @EmployeeId;
+                EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
+                DECLARE @Summary NVARCHAR(500) = CONCAT(N'User JIT-provisioned from Entra sign-in for employee ', @EmployeeId, N'.');
+                EXEC dbo.usp_Audit_Write @UserId, N'User.JitProvision', N'User', @UserId, @Summary;
+                COMMIT;
+            END TRY
+            BEGIN CATCH
+                IF @@TRANCOUNT > 0 ROLLBACK;
+                THROW;
+            END CATCH
+        END
+    END
+    ELSE IF @UserId IS NOT NULL
+        EXEC dbo.usp_Internal_GrantAutoRoles @UserId;
+
     SELECT UserId, IsActive FROM dbo.Users WHERE UserId = @UserId;
 END
 GO
@@ -263,5 +328,170 @@ BEGIN
     SET NOCOUNT ON;
     UPDATE dbo.Notifications SET ReadAtUtc = SYSUTCDATETIME() WHERE UserId = @ActorUserId AND ReadAtUtc IS NULL;
     SELECT @@ROWCOUNT AS Count;
+END
+GO
+
+/*----------------------- Employee self-service ---------------------*/
+CREATE OR ALTER PROCEDURE dbo.usp_Me_GetProfile
+    @ActorUserId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @EmployeeId INT = (SELECT EmployeeId FROM dbo.Employees WHERE UserId = @ActorUserId);
+    IF @EmployeeId IS NULL THROW 50404, N'Employee profile not found.', 1;
+
+    SELECT e.EmployeeId, e.EmployeeNumber, CONCAT(e.FirstName, N' ', e.LastName) AS FullName,
+           e.WorkEmail, e.Designation, d.DepartmentName,
+           CASE WHEN m.EmployeeId IS NULL THEN NULL ELSE CONCAT(m.FirstName, N' ', m.LastName) END AS ManagerName,
+           m.WorkEmail AS ManagerEmail, l.LocationName, e.EmploymentStatus, e.JoinDate,
+           e.MobileNumber, e.Address, e.BloodGroup, e.EmergencyContactName, e.EmergencyContactNumber,
+           CAST(CASE WHEN ph.EmployeeId IS NULL THEN 0 ELSE 1 END AS BIT) AS HasPhoto
+    FROM dbo.Employees e
+    LEFT JOIN dbo.Departments d ON d.DepartmentId = e.DepartmentId
+    LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId
+    LEFT JOIN dbo.Locations l ON l.LocationId = e.LocationId
+    LEFT JOIN dbo.EmployeePhotos ph ON ph.EmployeeId = e.EmployeeId
+    WHERE e.EmployeeId = @EmployeeId;
+
+    SELECT TOP (1) c.CardId, CONCAT(N'****', RIGHT(c.CardUid, 4)) AS MaskedUid, c.Status,
+           c.IssuedAtUtc, c.ExpiresAtUtc
+    FROM dbo.RFIDCards c
+    WHERE c.EmployeeId = @EmployeeId AND c.Status IN (N'Active', N'Blocked')
+    ORDER BY CASE c.Status WHEN N'Active' THEN 0 ELSE 1 END, c.IssuedAtUtc DESC, c.CardId DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Me_UpdateProfile
+    @ActorUserId           INT,
+    @MobileNumber          NVARCHAR(20) = NULL,
+    @Address               NVARCHAR(400) = NULL,
+    @BloodGroup            NVARCHAR(5) = NULL,
+    @EmergencyContactName  NVARCHAR(150) = NULL,
+    @EmergencyContactNumber NVARCHAR(20) = NULL,
+    @CorrelationId         UNIQUEIDENTIFIER = NULL,
+    @IpAddress             VARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @EmployeeId INT = (SELECT EmployeeId FROM dbo.Employees WHERE UserId = @ActorUserId);
+    IF @EmployeeId IS NULL THROW 50404, N'Employee profile not found.', 1;
+    IF @MobileNumber IS NOT NULL AND
+       (LEN(@MobileNumber)<7 OR LEN(@MobileNumber)>20 OR @MobileNumber LIKE N'%[^+0-9 -]%'
+        OR (@MobileNumber LIKE N'+%' AND (SUBSTRING(@MobileNumber,2,1) NOT LIKE N'[0-9]' OR SUBSTRING(@MobileNumber,2,LEN(@MobileNumber)) LIKE N'%+%'))
+        OR (@MobileNumber NOT LIKE N'+%' AND (@MobileNumber LIKE N'%+%' OR SUBSTRING(@MobileNumber,1,1) NOT LIKE N'[0-9]')))
+        THROW 50400, N'mobileNumber has an invalid format.', 1;
+    IF @EmergencyContactNumber IS NOT NULL AND
+       (LEN(@EmergencyContactNumber)<7 OR LEN(@EmergencyContactNumber)>20 OR @EmergencyContactNumber LIKE N'%[^+0-9 -]%'
+        OR (@EmergencyContactNumber LIKE N'+%' AND (SUBSTRING(@EmergencyContactNumber,2,1) NOT LIKE N'[0-9]' OR SUBSTRING(@EmergencyContactNumber,2,LEN(@EmergencyContactNumber)) LIKE N'%+%'))
+        OR (@EmergencyContactNumber NOT LIKE N'+%' AND (@EmergencyContactNumber LIKE N'%+%' OR SUBSTRING(@EmergencyContactNumber,1,1) NOT LIKE N'[0-9]')))
+        THROW 50400, N'emergencyContactNumber has an invalid format.', 1;
+    IF @BloodGroup IS NOT NULL AND @BloodGroup NOT IN (N'A+',N'A-',N'B+',N'B-',N'AB+',N'AB-',N'O+',N'O-')
+        THROW 50400, N'bloodGroup is invalid.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @AfterJson NVARCHAR(MAX);
+        UPDATE dbo.Employees
+        SET MobileNumber=@MobileNumber, Address=@Address, BloodGroup=@BloodGroup,
+            EmergencyContactName=@EmergencyContactName, EmergencyContactNumber=@EmergencyContactNumber,
+            UpdatedAtUtc=SYSUTCDATETIME(), UpdatedByUserId=@ActorUserId
+        WHERE EmployeeId=@EmployeeId;
+        SELECT @AfterJson=(SELECT @MobileNumber AS mobileNumber, @Address AS address, @BloodGroup AS bloodGroup,
+                                  @EmergencyContactName AS emergencyContactName, @EmergencyContactNumber AS emergencyContactNumber
+                           FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
+        EXEC dbo.usp_Audit_Write @ActorUserId, N'Employee.ProfileUpdate', N'Employee', @EmployeeId,
+             N'Employee contact profile updated.', NULL, @AfterJson, NULL, @CorrelationId, @IpAddress;
+        COMMIT;
+        EXEC dbo.usp_Me_GetProfile @ActorUserId;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT > 0 ROLLBACK;
+        THROW;
+    END CATCH
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Me_GetPhoto
+    @ActorUserId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @EmployeeId INT = (SELECT EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId);
+    IF @EmployeeId IS NULL THROW 50404, N'Employee photo not found.', 1;
+    SELECT ContentType, Photo, SizeBytes, UploadedAtUtc FROM dbo.EmployeePhotos WHERE EmployeeId=@EmployeeId;
+    IF @@ROWCOUNT = 0 THROW 50404, N'Employee photo not found.', 1;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Me_PutPhoto
+    @ActorUserId INT,
+    @PhotoContentType NVARCHAR(50),
+    @Photo VARBINARY(MAX),
+    @CorrelationId UNIQUEIDENTIFIER = NULL,
+    @IpAddress VARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    DECLARE @EmployeeId INT = (SELECT EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId);
+    IF @EmployeeId IS NULL THROW 50404, N'Employee profile not found.', 1;
+    IF @PhotoContentType NOT IN (N'image/jpeg',N'image/png') OR @Photo IS NULL OR DATALENGTH(@Photo) NOT BETWEEN 1 AND 1048576
+        THROW 50400, N'Photo must be JPEG or PNG and no larger than 1 MB.', 1;
+    IF (@PhotoContentType=N'image/jpeg' AND SUBSTRING(@Photo,1,3)<>0xFFD8FF)
+       OR (@PhotoContentType=N'image/png' AND SUBSTRING(@Photo,1,8)<>0x89504E470D0A1A0A)
+        THROW 50400, N'Photo signature does not match photoContentType.', 1;
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @AfterJson NVARCHAR(MAX);
+        UPDATE dbo.EmployeePhotos WITH (UPDLOCK, SERIALIZABLE)
+        SET ContentType=@PhotoContentType, Photo=@Photo, SizeBytes=DATALENGTH(@Photo),
+            UploadedAtUtc=SYSUTCDATETIME(), UploadedByUserId=@ActorUserId
+        WHERE EmployeeId=@EmployeeId;
+        IF @@ROWCOUNT=0
+            INSERT dbo.EmployeePhotos (EmployeeId,ContentType,Photo,SizeBytes,UploadedByUserId)
+            VALUES (@EmployeeId,@PhotoContentType,@Photo,DATALENGTH(@Photo),@ActorUserId);
+        SELECT @AfterJson=(SELECT @PhotoContentType AS contentType,DATALENGTH(@Photo) AS sizeBytes FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+        EXEC dbo.usp_Audit_Write @ActorUserId,N'Employee.PhotoUpdate',N'Employee',@EmployeeId,
+             N'Employee photo updated.',NULL,@AfterJson,NULL,@CorrelationId,@IpAddress;
+        COMMIT;
+        SELECT CAST(1 AS BIT) AS HasPhoto,@PhotoContentType AS ContentType,
+               DATALENGTH(@Photo) AS SizeBytes,SYSUTCDATETIME() AS UploadedAtUtc;
+    END TRY
+    BEGIN CATCH
+        IF @@TRANCOUNT>0 ROLLBACK;
+        THROW;
+    END CATCH
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Employee_GetPhoto
+    @ActorUserId INT,
+    @EmployeeId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @LocationId INT, @ActorEmployeeId INT;
+    SELECT @LocationId=LocationId FROM dbo.Employees WHERE EmployeeId=@EmployeeId AND EmploymentStatus IN (N'Active',N'Inactive',N'Exited');
+    SELECT @ActorEmployeeId=EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId;
+    IF @LocationId IS NULL THROW 50404,N'Employee photo not found.',1;
+
+    IF dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1
+       AND NOT (dbo.fn_HasPermission(@ActorUserId,N'Cards.Process')=1
+            OR dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify')=1
+            OR dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview')=1
+            OR dbo.fn_HasPermission(@ActorUserId,N'Employees.ViewAll')=1)
+       AND NOT EXISTS (SELECT 1 FROM dbo.Employees e WHERE e.EmployeeId=@EmployeeId AND e.ManagerEmployeeId=@ActorEmployeeId)
+        THROW 50404,N'Employee photo not found.',1;
+
+    IF NOT (dbo.fn_HasPermission(@ActorUserId,N'Cards.Process')=1
+         OR dbo.fn_HasPermission(@ActorUserId,N'Cards.HrVerify')=1
+         OR dbo.fn_HasPermission(@ActorUserId,N'Cards.SecurityReview')=1
+         OR dbo.fn_HasPermission(@ActorUserId,N'Cards.ManagerApprove')=1
+         OR dbo.fn_HasPermission(@ActorUserId,N'Employees.ViewAll')=1)
+        THROW 50403,N'Employee photo permission is required.',1;
+    IF dbo.fn_UserCanAccessLocation(@ActorUserId,@LocationId)=0
+        THROW 50404,N'Employee photo not found.',1;
+    SELECT ContentType,Photo,SizeBytes,UploadedAtUtc FROM dbo.EmployeePhotos WHERE EmployeeId=@EmployeeId;
+    IF @@ROWCOUNT=0 THROW 50404,N'Employee photo not found.',1;
 END
 GO

@@ -12,6 +12,10 @@ namespace EIWAMS.API.Functions;
 /// <summary>Dashboard widgets, reports (JSON and CSV) and the audit trail.</summary>
 public sealed class InsightsFunctions(IServiceProvider services, IInsightsService service) : FunctionBase(services)
 {
+    [Function(nameof(Dashboard_Home))]
+    public async Task<IActionResult> Dashboard_Home([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/dashboard/home")] HttpRequest req)
+        => Ok(await service.GetHomeAsync());
+
     [Function(nameof(GetDashboardSummary))]
     public async Task<IActionResult> GetDashboardSummary([HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "v1/dashboard/summary")] HttpRequest req)
         => Ok(await service.GetSummaryAsync());

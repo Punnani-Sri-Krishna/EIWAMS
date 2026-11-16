@@ -13,12 +13,13 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSortModule } from '@angular/material/sort';
 import { MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
+import { Router } from '@angular/router';
 import { Observable, filter } from 'rxjs';
 
 import { SessionService } from '../../core/services/session.service';
 import { FeatureLookups, Notifier, PagedList, humanize } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS, askReason } from '../approvals/kit/ui.components';
-import { CardRequestDialogComponent, IssueCardDialogComponent, IssueCardDialogData, ReplaceCardDialogComponent } from './card-dialogs.component';
+import { IssueCardDialogComponent, IssueCardDialogData, ReplaceCardDialogComponent } from './card-dialogs.component';
 import { Card, CardAction, CardRequest, CardRequestDecision, cardActions, cardRequestDecisions } from './cards.models';
 import { CardsService } from './cards.service';
 
@@ -218,7 +219,7 @@ import { CardsService } from './cards.service';
                       }
                     }
                     @if (r.status === 'Approved' && session.hasPermission('Cards.Issue')) {
-                      <button mat-flat-button type="button" (click)="issue({ request: r })"><mat-icon>contactless</mat-icon>Issue</button>
+                      <button mat-flat-button type="button" (click)="issue({ employeeId: r.employeeId })"><mat-icon>contactless</mat-icon>Issue</button>
                     }
                   </td>
                 </ng-container>
@@ -240,6 +241,7 @@ import { CardsService } from './cards.service';
 export class CardsPageComponent {
   private readonly service = inject(CardsService);
   private readonly dialog = inject(MatDialog);
+  private readonly router = inject(Router);
   private readonly notifier = inject(Notifier);
   readonly session = inject(SessionService);
   readonly lk = inject(FeatureLookups);
@@ -336,14 +338,7 @@ export class CardsPageComponent {
   }
 
   newRequest(): void {
-    this.dialog
-      .open<CardRequestDialogComponent, null, CardRequest>(CardRequestDialogComponent, { width: '600px', data: null })
-      .afterClosed()
-      .pipe(filter((r): r is CardRequest => !!r))
-      .subscribe((r) => {
-        this.notifier.success(`Card request ${r.requestNumber} submitted.`);
-        this.requests.load();
-      });
+    void this.router.navigate(['/cards/requests/new']);
   }
 
   issue(data: IssueCardDialogData): void {

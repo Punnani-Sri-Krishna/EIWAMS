@@ -1,10 +1,22 @@
 # EIWAMS - Employee Identity, Workplace Access and Monitoring System
 
-EIWAMS manages the employee identity and physical-access lifecycle: employee records, RFID ID cards (issue, loss,
-block, replacement), restricted-zone access requests with a three-stage approval (Manager -> Security -> Facility
-Admin), provisioned access permissions, RFID event ingestion with violation detection, incidents, blacklist, visitor
-passes, dashboards, reports and a complete audit trail. Authorization is database-driven: roles, permissions,
-facility scope and the top navigation menu all come from SQL.
+EIWAMS is ID Card + Workplace Access Management for employees that already exist in HRMS / Microsoft Entra ID
+(employees are not created in the UI; they sign in and are provisioned just-in-time, or arrive through
+`POST v1/employees/sync`). Employees maintain their profile and photo, raise ID card requests (New, Lost, Damaged)
+and building or wing/floor access requests, and track them under My Requests. Security modules (RFID monitor,
+violations, incidents, blacklist, visitors), reports and a complete audit trail remain. Authorization is
+database-driven: roles, permissions, facility scope and the top navigation menu all come from SQL.
+
+Flows (exact states in [docs/API-CONTRACT.md](docs/API-CONTRACT.md) §5):
+
+* **ID card request:** Manager approval -> HR verification -> (Lost only) Security review -> ID Card Team approval ->
+  Printing -> Ready to Issue -> Issued/Closed. Lost cards are blocked immediately and deactivated at security review.
+* **Access request:** Manager -> Security Head (Building) or Security Officer (Wing/Floor) -> Access Control Team,
+  then provisioning (shown as Completed). Durations: 1 week, 1/3/6 months, 1 year, permanent, custom.
+* Employee photos (JPEG/PNG, <= 1 MB, resized to 600x600 in the browser) are stored in SQL, not blob storage.
+
+Roles: Employee, Manager, HRAdmin, SecurityTeam (Security Officer), SecurityHead, IdCardTeam, AccessControlTeam,
+FacilityAdmin, Reception, SystemAdmin, Auditor.
 
 | Layer | Technology | Folder |
 |---|---|---|
@@ -51,10 +63,15 @@ Open http://localhost:4200. In **DevHeader** mode the sign-in page lists the see
 | 2 | Hari HR Admin | HRAdmin |
 | 3 | Meera Manager | Manager |
 | 4 | Sanjay Security | SecurityTeam |
-| 5 | Farah Facility Admin | FacilityAdmin |
+| 5 | Farah Facility Admin | FacilityAdmin, AccessControlTeam |
 | 6 | Ravi Reception | Reception |
 | 7 | Esha Employee | Employee (reports to Meera) |
 | 8 | Arjun Auditor | Auditor |
+| 11 | Sai Sharanya (`sai.sharanya@eiwams.local`) | Employee, Manager, SecurityHead |
+| 12 | Isha Card Desk (`idcard.team@eiwams.local`) | Employee, IdCardTeam |
+| 13 | Arvind Access Control (`access.control@eiwams.local`) | Employee, AccessControlTeam |
+| 14 | Kiran Das | Employee (reports to Sai) |
+| 15 | Neha Joshi | Employee (reports to Sai) |
 
 Use Microsoft Entra ID (`Auth:Mode=EntraId`) in every deployed environment. The EIWAMS-Web (SPA) and EIWAMS-API
 registrations are not created yet; configuration uses the placeholder `00000000-0000-0000-0000-000000000000` until
@@ -72,13 +89,13 @@ The full contract (routes, permissions, DTOs, states) is [docs/API-CONTRACT.md](
 
 | Area | Routes |
 |---|---|
-| Identity | `auth/config`, `v1/dev/users`, `v1/me`, `v1/me/menu`, `v1/lookups` |
-| Employees | `v1/employees`, `.../{id}/transfer`, `.../{id}/deactivate`, `.../{id}/cards`, `.../{id}/history` |
-| Cards | `v1/cards`, `.../{id}/activate`, `block`, `report-lost`, `replace`, `deactivate`; `v1/card-requests`, `.../{id}/decision` |
-| Access | `v1/access-requests` (+ `submit`, `cancel`), `v1/approvals/pending`, `v1/approvals/{id}/decision`, `v1/permissions`, `provision`, `{id}/revoke` |
+| Identity | `auth/config`, `v1/dev/users`, `v1/me`, `v1/me/menu`, `v1/me/profile`, `v1/me/photo`, `v1/lookups` |
+| Employees | `v1/employees`, `.../{id}/photo`, `.../{id}/transfer`, `.../{id}/deactivate`, `.../{id}/cards`, `.../{id}/history`, `v1/employees/sync` |
+| Cards | `v1/cards`, `.../{id}/activate`, `block`, `report-lost`, `replace`, `deactivate`; `v1/card-requests`, `.../queue`, `.../{id}`, `.../{id}/decision` |
+| Access | `v1/access-requests` (+ `submit`, `cancel`), `v1/approvals/pending`, `v1/approvals/team`, `v1/approvals/{id}/decision`, `v1/permissions`, `provision`, `{id}/revoke` |
 | Security | `v1/rfid/events`, `v1/violations`, `.../{id}/review`, `v1/incidents`, `v1/blacklist`, `.../{id}/lift` |
 | Visitors | `v1/visitors`, `v1/visitor-passes` (+ `approve`, `check-in`, `check-out`, `revoke`) |
-| Insights | `v1/dashboard/*`, `v1/reports/{name}` (+ `/export` CSV), `v1/audit-logs`, `v1/audit-logs/timeline` |
+| Insights | `v1/dashboard/home`, `v1/dashboard/*`, `v1/reports/{name}` (+ `/export` CSV), `v1/audit-logs`, `v1/audit-logs/timeline` |
 | Notifications | `v1/notifications`, `unread-count`, `{id}/read`, `read-all` |
 | Admin | `v1/admin/users`, `roles`, `roles/{id}/permissions`, `permissions`, `settings`; `v1/departments`, `v1/locations`, `v1/readers` |
 

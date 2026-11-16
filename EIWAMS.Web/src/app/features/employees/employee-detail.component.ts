@@ -1,22 +1,19 @@
 import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTableModule } from '@angular/material/table';
 import { MatTabsModule } from '@angular/material/tabs';
 import { ActivatedRoute, RouterLink } from '@angular/router';
-import { filter } from 'rxjs';
 
 import { ApiError } from '../../core/models/api.models';
 import { SessionService } from '../../core/services/session.service';
-import { Notifier, asApiError } from '../approvals/kit/feature-kit';
+import { asApiError } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS } from '../approvals/kit/ui.components';
 import { Card } from '../cards/cards.models';
 import { AccessPermission } from '../permissions/permissions.models';
 import { PermissionsService } from '../permissions/permissions.service';
-import { DeactivateDialogComponent, TransferDialogComponent } from './employee-dialogs.component';
 import { EmployeeDetail, EmployeeHistory } from './employees.models';
 import { EmployeesService } from './employees.service';
 
@@ -46,17 +43,6 @@ function emptyTab<T>(): TabState<T> {
         </h1>
         <div class="page-actions">
           <a mat-button routerLink="/employees"><mat-icon>arrow_back</mat-icon>Employees</a>
-          @if (employee(); as e) {
-            @if (session.hasPermission('Employees.Manage')) {
-              <a mat-stroked-button [routerLink]="['/employees', e.employeeId, 'edit']"><mat-icon>edit</mat-icon>Edit</a>
-            }
-            @if (e.employmentStatus === 'Active' && session.hasPermission('Employees.Transfer')) {
-              <button mat-stroked-button type="button" (click)="transfer(e)"><mat-icon>swap_horiz</mat-icon>Transfer</button>
-            }
-            @if (e.employmentStatus === 'Active' && session.hasPermission('Employees.Deactivate')) {
-              <button mat-flat-button type="button" class="danger-action" (click)="deactivate(e)"><mat-icon>person_off</mat-icon>Deactivate</button>
-            }
-          }
         </div>
       </header>
 
@@ -209,8 +195,6 @@ function emptyTab<T>(): TabState<T> {
 export class EmployeeDetailComponent {
   private readonly service = inject(EmployeesService);
   private readonly permissionsService = inject(PermissionsService);
-  private readonly dialog = inject(MatDialog);
-  private readonly notifier = inject(Notifier);
   readonly session = inject(SessionService);
   readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id'));
 
@@ -274,29 +258,4 @@ export class EmployeeDetailComponent {
     });
   }
 
-  transfer(e: EmployeeDetail): void {
-    this.dialog
-      .open<TransferDialogComponent, EmployeeDetail, EmployeeDetail>(TransferDialogComponent, { data: e, width: '640px' })
-      .afterClosed()
-      .pipe(filter((r): r is EmployeeDetail => !!r))
-      .subscribe(() => {
-        this.notifier.success('Employee transferred.');
-        this.history.set(emptyTab());
-        this.load();
-      });
-  }
-
-  deactivate(e: EmployeeDetail): void {
-    this.dialog
-      .open<DeactivateDialogComponent, EmployeeDetail, EmployeeDetail>(DeactivateDialogComponent, { data: e, width: '560px' })
-      .afterClosed()
-      .pipe(filter((r): r is EmployeeDetail => !!r))
-      .subscribe(() => {
-        this.notifier.success('Employee deactivated.');
-        this.history.set(emptyTab());
-        this.cards.set(emptyTab());
-        this.permissions.set(emptyTab());
-        this.load();
-      });
-  }
 }

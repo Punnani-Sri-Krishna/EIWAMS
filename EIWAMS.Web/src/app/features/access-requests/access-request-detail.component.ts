@@ -1,80 +1,54 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
-import { DatePipe } from '@angular/common';
+import { DatePipe, Location } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIconModule } from '@angular/material/icon';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Observable } from 'rxjs';
 
 import { ApiError } from '../../core/models/api.models';
 import { SessionService } from '../../core/services/session.service';
+import { HistoryTimelineComponent } from '../../shared/components/history-timeline/history-timeline.component';
+import { StageStepperComponent } from '../../shared/components/stage-stepper/stage-stepper.component';
 import { ApprovalDecision, DECISION_PAST_TENSE } from '../approvals/approvals.models';
 import { ApprovalsService } from '../approvals/approvals.service';
-import { Notifier, asApiError, humanize } from '../approvals/kit/feature-kit';
+import { Notifier, asApiError } from '../approvals/kit/feature-kit';
 import { KIT_IMPORTS, askReason } from '../approvals/kit/ui.components';
 import { PermissionsService } from '../permissions/permissions.service';
-import { AccessRequestDetail, buildTimeline } from './access-requests.models';
+import { AccessRequestDetail, accessRequestSteps, accessTimeline, accessTypeLabel, durationLabel, stageLabel } from './access-requests.models';
 import { AccessRequestsService } from './access-requests.service';
-
-const STEP_ICON: Record<string, string> = {
-  done: 'check_circle',
-  current: 'hourglass_top',
-  pending: 'radio_button_unchecked',
-  returned: 'undo',
-  rejected: 'cancel',
-  skipped: 'remove_circle_outline',
-};
-const STEP_TONE: Record<string, string> = {
-  done: 'success',
-  current: 'warning',
-  pending: 'neutral',
-  returned: 'warning',
-  rejected: 'danger',
-  skipped: 'neutral',
-};
 
 @Component({
   selector: 'eiw-access-request-detail',
-  imports: [DatePipe, RouterLink, MatButtonModule, MatIconModule, MatProgressBarModule, ...KIT_IMPORTS],
+  imports: [
+    DatePipe, RouterLink, MatButtonModule, MatIconModule, MatProgressBarModule, StageStepperComponent, HistoryTimelineComponent, ...KIT_IMPORTS,
+  ],
   changeDetection: ChangeDetectionStrategy.OnPush,
   styles: `
-    .timeline { list-style: none; padding: 0; margin: 0; }
-    .timeline li { display: flex; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid rgba(0, 0, 0, 0.08); }
-    .timeline li:last-child { border-bottom: 0; }
+    .title { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .sticky { position: sticky; top: 88px; }
+    .action-stack { display: flex; flex-direction: column; gap: 8px; }
+    .action-stack > * { width: 100%; justify-content: flex-start; }
+    @media (max-width: 991.98px) { .sticky { position: static; } }
   `,
   template: `
     <section class="page">
       <header class="page-header">
-        <h1>
-          Access request {{ request()?.requestNumber }}
+        <div>
+          <h1 class="title">
+            Access request {{ request()?.requestNumber }}
+            @if (request(); as r) {
+              <eiw-status [value]="r.status" kind="access-request" />
+            }
+          </h1>
           @if (request(); as r) {
-            <eiw-status [value]="r.status" />
+            <p class="subtitle">{{ accessTypeLabel(r.accessType) }} · created {{ r.createdAtUtc | date: 'medium' }} by {{ r.requesterName }}</p>
           }
-        </h1>
+        </div>
         <div class="page-actions">
-          <a mat-button routerLink="/access-requests"><mat-icon>arrow_back</mat-icon>Requests</a>
-          @if (request(); as r) {
-            @if (r.canEdit && session.hasPermission('AccessRequests.Create')) {
-              <a mat-stroked-button [routerLink]="['/access-requests', r.accessRequestId, 'edit']"><mat-icon>edit</mat-icon>Edit</a>
-            }
-            @if (r.canSubmit && session.hasPermission('AccessRequests.Create')) {
-              <button mat-flat-button type="button" [disabled]="busy()" (click)="submit(r)">
-                <mat-icon>send</mat-icon>{{ r.status === 'Returned' ? 'Resubmit' : 'Submit' }}
-              </button>
-            }
-            @if (r.canCancel && session.hasPermission('AccessRequests.Create')) {
-              <button mat-button type="button" class="danger-action" [disabled]="busy()" (click)="cancel(r)"><mat-icon>cancel</mat-icon>Cancel request</button>
-            }
-            @if (r.canDecide && session.hasPermission('Approvals.Decide')) {
-              <button mat-flat-button type="button" [disabled]="busy()" (click)="decide(r, 'Approve')"><mat-icon>check</mat-icon>Approve</button>
-              <button mat-stroked-button type="button" [disabled]="busy()" (click)="decide(r, 'Return')"><mat-icon>undo</mat-icon>Return</button>
-              <button mat-stroked-button type="button" class="danger-action" [disabled]="busy()" (click)="decide(r, 'Reject')"><mat-icon>close</mat-icon>Reject</button>
-            }
-            @if (r.canProvision && session.hasPermission('Permissions.Provision')) {
-              <button mat-flat-button type="button" [disabled]="busy()" (click)="provision(r)"><mat-icon>key</mat-icon>Provision access</button>
-            }
-          }
+          <button mat-button type="button" (click)="back()"><mat-icon>arrow_back</mat-icon>Back</button>
+          <button mat-stroked-button type="button" (click)="load()" [disabled]="loading()"><mat-icon>refresh</mat-icon>Refresh</button>
         </div>
       </header>
 
@@ -84,75 +58,77 @@ const STEP_TONE: Record<string, string> = {
       <eiw-error-state [error]="error()" (retry)="load()" />
 
       @if (request(); as r) {
+        <div class="data-card">
+          <app-stage-stepper [steps]="steps()" label="Access request progress" />
+        </div>
+
         <div class="row g-3">
-          <div class="col-lg-7">
-            <div class="data-card p-3">
-              <h2 class="h5">Request</h2>
-              <dl class="row mb-0">
-                <dt class="col-sm-4">Employee</dt><dd class="col-sm-8">{{ r.employeeName }} ({{ r.employeeNumber }})</dd>
-                <dt class="col-sm-4">Location</dt>
-                <dd class="col-sm-8">
-                  {{ r.locationName }} <span class="text-muted">{{ r.locationCode }}</span>
-                  @if (r.isRestricted) {
-                    <span class="status-chip tone-danger"><mat-icon aria-hidden="true">lock</mat-icon>Restricted</span>
-                  }
-                </dd>
-                <dt class="col-sm-4">Validity</dt><dd class="col-sm-8">{{ r.validFromUtc | date: 'medium' }} – {{ r.validToUtc | date: 'medium' }}</dd>
-                <dt class="col-sm-4">Justification</dt><dd class="col-sm-8" style="white-space: pre-line">{{ r.businessJustification }}</dd>
-                <dt class="col-sm-4">Requested by</dt><dd class="col-sm-8">{{ r.requesterName }} on {{ r.createdAtUtc | date: 'medium' }}</dd>
-                <dt class="col-sm-4">Submitted</dt><dd class="col-sm-8">{{ r.submittedAtUtc ? (r.submittedAtUtc | date: 'medium') : 'Not submitted' }}</dd>
+          <div class="col-lg-8">
+            <div class="data-card">
+              <h2 class="section-title"><mat-icon>vpn_key</mat-icon>Request details</h2>
+              <dl class="kv-grid">
+                <dt>Employee</dt><dd>{{ r.employeeName }} <span class="text-muted">({{ r.employeeNumber }})</span></dd>
+                <dt>Access type</dt><dd>{{ accessTypeLabel(r.accessType) }}</dd>
+                <dt>Building</dt><dd>{{ r.buildingLocationName || r.locationName || '—' }}</dd>
+                @if (r.accessType === 'WingFloor') {
+                  <dt>Wing / floor</dt>
+                  <dd>
+                    {{ r.locationName }} <span class="text-muted">{{ r.locationCode }}</span>
+                    @if (r.isRestricted) {
+                      <span class="status-chip tone-danger ms-1"><mat-icon aria-hidden="true">lock</mat-icon>Restricted</span>
+                    }
+                  </dd>
+                } @else if (r.isRestricted) {
+                  <dt>Restriction</dt><dd><span class="status-chip tone-danger"><mat-icon aria-hidden="true">lock</mat-icon>Restricted</span></dd>
+                }
+                <dt>Duration</dt><dd>{{ durationLabel(r.durationCode) || '—' }}</dd>
+                <dt>Valid</dt>
+                <dd>{{ r.validFromUtc | date: 'medium' }} – {{ r.durationCode === 'Permanent' ? 'Permanent' : (r.validToUtc | date: 'medium') }}</dd>
+                <dt>Justification</dt><dd class="pre">{{ r.businessJustification }}</dd>
+                <dt>Submitted</dt><dd>{{ r.submittedAtUtc ? (r.submittedAtUtc | date: 'medium') : 'Not submitted' }}</dd>
                 @if (r.currentStage) {
-                  <dt class="col-sm-4">Waiting on</dt><dd class="col-sm-8">{{ humanize(r.currentStage) }} — {{ r.currentApproverNames }}</dd>
+                  <dt>Waiting on</dt><dd>{{ stageLabel(r.currentStage) }}@if (r.currentApproverNames) { · {{ r.currentApproverNames }} }</dd>
                 }
                 @if (r.permissionId) {
-                  <dt class="col-sm-4">Permission</dt><dd class="col-sm-8"><eiw-status [value]="r.permissionStatus" /> #{{ r.permissionId }}</dd>
+                  <dt>Permission</dt><dd><eiw-status [value]="r.permissionStatus" /> <span class="text-muted">#{{ r.permissionId }}</span></dd>
                 }
               </dl>
             </div>
           </div>
-          <div class="col-lg-5">
-            <div class="data-card p-3">
-              <h2 class="h5">Approval progress</h2>
-              <ol class="timeline" aria-label="Approval stages">
-                @for (step of timeline(); track step.stage) {
-                  <li>
-                    <span [class]="'status-chip tone-' + stepTone[step.state]"><mat-icon aria-hidden="true">{{ stepIcon[step.state] }}</mat-icon>{{ humanize(step.stage) }}</span>
-                    <div>
-                      <div>{{ humanize(step.state === 'done' ? 'Approved' : step.state) }}</div>
-                      @if (step.approval?.decidedByName) {
-                        <div class="text-muted small">{{ step.approval?.decidedByName }} · {{ step.approval?.decidedAtUtc | date: 'medium' }}</div>
-                      } @else if (step.approval?.assignedToNames) {
-                        <div class="text-muted small">Assigned to {{ step.approval?.assignedToNames }}</div>
-                      }
-                      @if (step.approval?.comments) {
-                        <div class="small fst-italic">“{{ step.approval?.comments }}”</div>
-                      }
-                    </div>
-                  </li>
+          <div class="col-lg-4">
+            <div class="sticky">
+              <div class="data-card">
+                <h2 class="section-title"><mat-icon>bolt</mat-icon>Actions</h2>
+                @if (hasActions(r)) {
+                  <div class="action-stack">
+                    @if (r.canDecide && canDecide) {
+                      <button mat-flat-button type="button" data-action="Approve" [disabled]="busy()" (click)="decide(r, 'Approve')"><mat-icon>check</mat-icon>Approve</button>
+                      <button mat-stroked-button type="button" data-action="Return" [disabled]="busy()" (click)="decide(r, 'Return')"><mat-icon>undo</mat-icon>Return for changes</button>
+                      <button mat-stroked-button type="button" data-action="Reject" class="danger-action" [disabled]="busy()" (click)="decide(r, 'Reject')"><mat-icon>close</mat-icon>Reject</button>
+                    }
+                    @if (r.canProvision && canProvision) {
+                      <button mat-flat-button type="button" data-action="Provision" [disabled]="busy()" (click)="provision(r)"><mat-icon>key</mat-icon>Provision access</button>
+                    }
+                    @if (r.canEdit && canCreate) {
+                      <a mat-stroked-button data-action="Edit" [routerLink]="['/access-requests', r.accessRequestId, 'edit']"><mat-icon>edit</mat-icon>Edit request</a>
+                    }
+                    @if (r.canSubmit && canCreate) {
+                      <button mat-flat-button type="button" data-action="Submit" [disabled]="busy()" (click)="submit(r)">
+                        <mat-icon>send</mat-icon>{{ r.status === 'Returned' ? 'Resubmit' : 'Submit' }}
+                      </button>
+                    }
+                    @if (r.canCancel && canCreate) {
+                      <button mat-button type="button" data-action="Cancel" class="danger-action" [disabled]="busy()" (click)="cancel(r)"><mat-icon>cancel</mat-icon>Cancel request</button>
+                    }
+                  </div>
+                } @else {
+                  <p class="text-muted mb-0">No actions are available to you at this stage.</p>
                 }
-              </ol>
-              @if (r.approvals.length) {
-                <h3 class="h6 mt-3">Full history</h3>
-                <ol class="timeline small">
-                  @for (a of history(); track a.approvalId) {
-                    <li>
-                      <eiw-status [value]="a.decision" />
-                      <div>
-                        <strong>{{ humanize(a.stage) }}</strong>
-                        <span class="text-muted"> {{ a.decidedByName ?? a.assignedToNames }}</span>
-                        @if (a.decidedAtUtc) {
-                          <span class="text-muted"> · {{ a.decidedAtUtc | date: 'medium' }}</span>
-                        }
-                        @if (a.comments) {
-                          <div class="fst-italic">“{{ a.comments }}”</div>
-                        }
-                      </div>
-                    </li>
-                  }
-                </ol>
-              } @else {
-                <eiw-empty-state message="No approval activity yet." icon="pending_actions" />
-              }
+              </div>
+              <div class="data-card">
+                <h2 class="section-title"><mat-icon>history</mat-icon>History</h2>
+                <app-history-timeline [entries]="timeline()" label="Access request history" emptyText="No approval activity yet." />
+              </div>
             </div>
           </div>
         </div>
@@ -166,24 +142,41 @@ export class AccessRequestDetailComponent {
   private readonly permissions = inject(PermissionsService);
   private readonly dialog = inject(MatDialog);
   private readonly notifier = inject(Notifier);
-  readonly session = inject(SessionService);
+  private readonly location = inject(Location);
+  private readonly router = inject(Router);
+  private readonly session = inject(SessionService);
   readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id'));
-  readonly humanize = humanize;
-  readonly stepIcon = STEP_ICON;
-  readonly stepTone = STEP_TONE;
+  readonly accessTypeLabel = accessTypeLabel;
+  readonly durationLabel = durationLabel;
+  readonly stageLabel = stageLabel;
+  readonly canDecide = this.session.hasPermission('Approvals.Decide');
+  readonly canProvision = this.session.hasPermission('Permissions.Provision');
+  readonly canCreate = this.session.hasPermission('AccessRequests.Create');
 
   readonly request = signal<AccessRequestDetail | null>(null);
   readonly loading = signal(false);
   readonly busy = signal(false);
   readonly error = signal<ApiError | null>(null);
+  readonly steps = computed(() => {
+    const r = this.request();
+    return r ? accessRequestSteps(r) : [];
+  });
   readonly timeline = computed(() => {
     const r = this.request();
-    return r ? buildTimeline(r) : [];
+    return r ? accessTimeline(r) : [];
   });
-  readonly history = computed(() => [...(this.request()?.approvals ?? [])].sort((a, b) => a.approvalId - b.approvalId));
 
   constructor() {
     this.load();
+  }
+
+  hasActions(r: AccessRequestDetail): boolean {
+    return (r.canDecide && this.canDecide) || (r.canProvision && this.canProvision) || ((r.canEdit || r.canSubmit || r.canCancel) && this.canCreate);
+  }
+
+  back(): void {
+    if (window.history.length > 1) this.location.back();
+    else void this.router.navigate(['/my-requests'], { queryParams: { tab: 'access' } });
   }
 
   load(): void {
@@ -211,12 +204,15 @@ export class AccessRequestDetailComponent {
   }
 
   decide(r: AccessRequestDetail, decision: ApprovalDecision): void {
-    this.approvals.decideWithPrompt(r, decision).subscribe({
+    this.approvals.decideWithPrompt({ ...r, stage: r.currentStage }, decision).subscribe({
       next: () => {
         this.notifier.success(`${r.requestNumber} ${DECISION_PAST_TENSE[decision]}.`);
         this.load();
       },
-      error: (err: unknown) => this.notifier.error(err),
+      error: (err: unknown) => {
+        this.notifier.error(err);
+        this.load();
+      },
     });
   }
 

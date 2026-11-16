@@ -36,6 +36,12 @@ export interface CurrentUser {
   email: string;
   employeeId: number | null;
   employeeNumber: string | null;
+  designation?: string | null;
+  departmentName?: string | null;
+  managerName?: string | null;
+  managerEmail?: string | null;
+  locationName?: string | null;
+  hasPhoto?: boolean;
   roles: string[];
   permissions: string[];
   allFacilities: boolean;
@@ -76,6 +82,14 @@ export interface Lookups {
   cardStatuses: string[];
   cardRequestTypes: string[];
   cardRequestStatuses: string[];
+  /** v2 lookups (optional so the UI degrades gracefully against an older API). */
+  cardRequestTypesOffered?: string[];
+  cardRequestStages?: string[];
+  cardRequestActions?: string[];
+  damagedReasons?: string[];
+  bloodGroups?: string[];
+  accessTypes?: string[];
+  durationCodes?: string[];
   accessRequestStatuses: string[];
   approvalStages: string[];
   permissionStatuses: string[];

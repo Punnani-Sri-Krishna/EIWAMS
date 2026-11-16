@@ -1,8 +1,11 @@
 using Dapper;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using EIWAMS.Application.Common;
 using EIWAMS.Application.Constants;
 using EIWAMS.Application.Models.DTOs.Cards;
 using EIWAMS.Application.Models.DTOs.Employees;
+using EIWAMS.Application.Models.DTOs.Identity;
 using EIWAMS.Infrastructure.DataAccessLayer;
 using EIWAMS.Infrastructure.Repositories.Interfaces;
 
@@ -83,6 +86,35 @@ public sealed class EmployeeRepository(IDbConnectionFactory factory) : Repositor
 
     public Task<IReadOnlyList<EmployeeHistoryDto>> GetHistoryAsync(ActorContext actor, int employeeId)
         => QueryAsync<EmployeeHistoryDto>(StoredProcedures.EmployeeGetHistory, Read(actor, new { EmployeeId = employeeId }));
+
+    public async Task<PhotoDto> GetPhotoAsync(ActorContext actor, int employeeId)
+    {
+        EmployeePhotoRow row = await QuerySingleAsync<EmployeePhotoRow>(StoredProcedures.EmployeeGetPhoto, Read(actor, new { EmployeeId = employeeId }));
+        return new PhotoDto
+        {
+            ContentType = row.ContentType,
+            PhotoBase64 = Convert.ToBase64String(row.Photo),
+            SizeBytes = row.SizeBytes,
+            UploadedAtUtc = row.UploadedAtUtc,
+        };
+    }
+
+    public Task<EmployeeSyncResultDto> SyncAsync(ActorContext actor, EmployeeSyncRequest request)
+        => QuerySingleAsync<EmployeeSyncResultDto>(StoredProcedures.EmployeeSync, Write(actor, new
+        {
+            EmployeesJson = JsonSerializer.Serialize(request.Employees, new JsonSerializerOptions(JsonSerializerDefaults.Web)
+            {
+                Converters = { new JsonStringEnumConverter() },
+            }),
+        }));
+
+    private sealed class EmployeePhotoRow
+    {
+        public string ContentType { get; set; } = string.Empty;
+        public byte[] Photo { get; set; } = [];
+        public int SizeBytes { get; set; }
+        public DateTime UploadedAtUtc { get; set; }
+    }
 }
 
 public sealed class CardRepository(IDbConnectionFactory factory) : RepositoryBase(factory), ICardRepository
@@ -136,23 +168,65 @@ public sealed class CardRepository(IDbConnectionFactory factory) : RepositoryBas
             query.RequestType,
             query.EmployeeId,
             query.Search,
+            query.Mine,
         }), query.Page, query.PageSize);
 
-    public Task<CardRequestDto> CreateRequestAsync(ActorContext actor, CreateCardRequestRequest r)
-        => QuerySingleAsync<CardRequestDto>(StoredProcedures.CardRequestCreate, Write(actor, new
+    public Task<PagedResult<CardRequestDto>> QueueRequestsAsync(ActorContext actor, CardRequestQueueQuery query)
+        => QueryPagedAsync<CardRequestDto>(StoredProcedures.CardRequestQueue, Read(actor, new
+        {
+            query.Stage,
+            query.Search,
+        }), query.Page, query.PageSize);
+
+    public Task<CardRequestDetailDto> GetRequestAsync(ActorContext actor, long cardRequestId)
+        => QueryCardRequestDetailAsync(StoredProcedures.CardRequestGet, Read(actor, new { CardRequestId = cardRequestId }));
+
+    public Task<CardRequestDetailDto> CreateRequestAsync(ActorContext actor, CreateCardRequestRequest r)
+    {
+        byte[]? photo = DecodePhoto(r.PhotoBase64);
+        return QueryCardRequestDetailAsync(StoredProcedures.CardRequestCreate, Write(actor, new
         {
             r.EmployeeId,
             r.RequestType,
-            r.OldCardId,
             r.Reason,
-            r.RequestedValidToUtc,
+            r.MobileNumber,
+            r.Address,
+            r.BloodGroup,
+            r.EmergencyContactName,
+            r.EmergencyContactNumber,
+            PhotoContentType = photo is null ? null : r.PhotoContentType,
+            Photo = photo,
         }));
+    }
 
-    public Task<CardRequestDto> DecideRequestAsync(ActorContext actor, long cardRequestId, CardRequestDecisionRequest r)
-        => QuerySingleAsync<CardRequestDto>(StoredProcedures.CardRequestDecide, Write(actor, new
+    public Task<CardRequestDetailDto> DecideRequestAsync(ActorContext actor, long cardRequestId, CardRequestDecisionRequest r)
+        => QueryCardRequestDetailAsync(StoredProcedures.CardRequestDecide, Write(actor, new
         {
             CardRequestId = cardRequestId,
-            r.Decision,
+            r.Action,
             r.Comments,
+            r.Version,
         }));
+
+    private Task<CardRequestDetailDto> QueryCardRequestDetailAsync(string procedure, object parameters)
+        => QueryMultipleAsync(procedure, parameters, async grid =>
+        {
+            CardRequestDetailDto? detail = await grid.ReadFirstOrDefaultAsync<CardRequestDetailDto>();
+            if (detail is null)
+                throw AppException.NotFound(ApiMessages.NotFound);
+            detail.History = (await grid.ReadAsync<CardRequestHistoryDto>()).AsList();
+            detail.AvailableActions = (await grid.ReadAsync<string>()).AsList();
+            return detail;
+        });
+
+    private static byte[]? DecodePhoto(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        string base64 = value.Trim();
+        int comma = base64.IndexOf(',');
+        if (base64.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0)
+            base64 = base64[(comma + 1)..];
+        return Convert.FromBase64String(base64);
+    }
 }

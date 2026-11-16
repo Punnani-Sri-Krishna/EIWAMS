@@ -51,6 +51,10 @@
       "value": ""
     },
     {
+      "key": "cardRequestVersion",
+      "value": ""
+    },
+    {
       "key": "accessRequestId",
       "value": ""
     },
@@ -1246,7 +1250,7 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/v1/card-requests?status=Submitted&page=1&pageSize=20",
+              "raw": "{{baseUrl}}/v1/card-requests?status=PendingManager&page=1&pageSize=20",
               "host": [
                 "{{baseUrl}}"
               ],
@@ -1257,7 +1261,7 @@
               "query": [
                 {
                   "key": "status",
-                  "value": "Submitted"
+                  "value": "PendingManager"
                 },
                 {
                   "key": "page",
@@ -1282,7 +1286,8 @@
                   "pm.test(\"CreateCardRequest returns 201\", function () { pm.response.to.have.status(201); });",
                   "const json = pm.response.json();",
                   "pm.test(\"Envelope success\", function () { pm.expect(json.success).to.eql(true); pm.expect(json).to.have.property(\"data\"); });",
-                  "try { const v = json.data.cardRequestId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardRequestId\", v); } } catch (e) {}"
+                  "try { const v = json.data.cardRequestId; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardRequestId\", v); } } catch (e) {}",
+                  "try { const v = json.data.version; if (v !== undefined && v !== null) { pm.collectionVariables.set(\"cardRequestVersion\", v); } } catch (e) {}"
                 ]
               }
             }
@@ -1311,7 +1316,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"requestType\": \"Temporary\",\n  \"oldCardId\": null,\n  \"reason\": \"Forgot permanent card at home\",\n  \"requestedValidToUtc\": \"{{validToUtc}}\"\n}",
+              "raw": "{\n  \"employeeId\": {{employeeId}},\n  \"requestType\": \"New\",\n  \"reason\": null,\n  \"mobileNumber\": \"+91 90000 12345\",\n  \"address\": \"Bengaluru\",\n  \"bloodGroup\": \"O+\",\n  \"emergencyContactName\": \"Demo Contact\",\n  \"emergencyContactNumber\": \"+91 90000 12346\",\n  \"photoContentType\": \"image/jpeg\",\n  \"photoBase64\": \"/9j/\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1344,7 +1349,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{securityUserId}}"
+                "value": "{{managerUserId}}"
               }
             ],
             "url": {
@@ -1361,7 +1366,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"decision\": \"Verify\",\n  \"comments\": \"Identity verified at desk\"\n}",
+              "raw": "{\n  \"action\": \"Approve\",\n  \"comments\": \"Manager approval\",\n  \"version\": \"{{cardRequestVersion}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1519,7 +1524,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"locationId\": 10,\n  \"businessJustification\": \"Prototype validation in the R&D lab\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"submit\": false\n}",
+              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"accessType\": \"WingFloor\",\n  \"buildingLocationId\": 2,\n  \"locationId\": 10,\n  \"durationCode\": \"Custom\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"justification\": \"Prototype validation in the R&D lab\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1610,7 +1615,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"locationId\": 10,\n  \"businessJustification\": \"Prototype validation in the R&D lab (updated)\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
+              "raw": "{\n  \"accessType\": \"WingFloor\",\n  \"buildingLocationId\": 2,\n  \"locationId\": 10,\n  \"durationCode\": \"Custom\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"justification\": \"Prototype validation in the R&D lab (updated)\",\n  \"version\": \"{{accessRequestVersion}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -1825,7 +1830,7 @@
           }
         },
         {
-          "name": "POST v1/approvals/{accessRequestId:long}/decision (DecideApproval - FacilityAdmin)",
+          "name": "POST v1/approvals/{accessRequestId:long}/decision (DecideApproval - AccessControl)",
           "event": [
             {
               "listen": "test",
@@ -1849,7 +1854,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{facilityAdminUserId}}"
+                "value": "13"
               }
             ],
             "url": {
@@ -1873,7 +1878,7 @@
                 }
               }
             },
-            "description": "Stage 3 of 3 (FacilityAdmin); the request becomes Approved."
+            "description": "Stage 3 of 3 (AccessControl); use user 13. The request becomes Approved."
           }
         },
         {
@@ -1901,7 +1906,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{facilityAdminUserId}}"
+                "value": "13"
               }
             ],
             "url": {
@@ -1951,7 +1956,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{facilityAdminUserId}}"
+                "value": "13"
               }
             ],
             "url": {
@@ -2004,7 +2009,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{facilityAdminUserId}}"
+                "value": "13"
               }
             ],
             "url": {
@@ -2071,7 +2076,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"locationId\": 9,\n  \"businessJustification\": \"Quarterly planning sessions on floor 5\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"submit\": true\n}",
+              "raw": "{\n  \"employeeId\": {{eshaEmployeeId}},\n  \"accessType\": \"Building\",\n  \"buildingLocationId\": 2,\n  \"locationId\": 2,\n  \"durationCode\": \"Custom\",\n  \"validFromUtc\": \"{{validFromUtc}}\",\n  \"validToUtc\": \"{{validToUtc}}\",\n  \"justification\": \"Quarterly planning sessions on floor 5\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2355,7 +2360,7 @@
               },
               {
                 "key": "X-User-Id",
-                "value": "{{facilityAdminUserId}}"
+                "value": "13"
               }
             ],
             "url": {

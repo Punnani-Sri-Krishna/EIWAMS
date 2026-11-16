@@ -31,7 +31,13 @@ menus and seed users. Never change it yourself: if the contract is wrong or inco
 
 Email notifications, SMTP configuration, mail templates, reminder engine, escalation engine, storage accounts, blob
 storage, Azure Storage queues, file upload management, microservices, event bus, service bus, Redis cache, background
-jobs/timers, Hangfire, SignalR. Notifications are in-app rows in `Notifications`, written in the same transaction.
+jobs/timers, Hangfire, SignalR, AI/agent/chatbot features. Notifications are in-app rows in `Notifications`, written in
+the same transaction.
+
+**Allowed exception - employee photos:** stored in SQL (`dbo.EmployeePhotos.Photo VARBINARY(MAX)`, max 1 MB,
+`image/jpeg`/`image/png`, SQL CHECK `DATALENGTH(Photo) <= 1048576`) and transported as base64 JSON (`photoBase64`,
+`photoContentType`) per contract §5.5. No blob storage, no multipart uploads, no files on disk; never write photo bytes
+to logs or `AuditLogs`.
 
 ## Conventions (from the contract)
 
@@ -59,7 +65,15 @@ jobs/timers, Hangfire, SignalR. Notifications are in-app rows in `Notifications`
   (parameters `-Server -Database -Action plan|apply|baseline -Authentication ActiveDirectoryDefault|SqlPassword|Integrated
   -IncludeAdminProvisioning -IncludeDemoData -Sqlcmd -TrustServerCertificate`, used by
   `.github/workflows/deploy-database.yml`). Demo data must be refused for databases whose name contains `prod`.
-* Seed the 8 roles, permission codes, role grants, menus and DevHeader users 1-8 exactly as in the contract.
+* Seed the 11 roles (incl. `SecurityHead`, `IdCardTeam`, `AccessControlTeam`), permission codes, role grants, menus
+  (MERGE keyed on route; unlisted rows `IsActive=0`) and DevHeader users 1-15 exactly as in the contract.
+* v2 scope (contract §4-§6): card request state machine `PendingManager -> PendingHR -> [PendingSecurity] ->
+  PendingIdCardTeam -> Printing -> ReadyToIssue -> Closed` with `CardRequestHistory`, `availableActions` and stage
+  queues; access requests with `AccessType`/`DurationCode` and stages `Manager -> SecurityHead|Security -> AccessControl`;
+  JIT provisioning in `usp_User_ResolveEntra`; `v1/me/profile`, `v1/me/photo`, `v1/employees/{id}/photo`,
+  `v1/employees/sync`, `v1/approvals/team`, `v1/dashboard/home`. Azure Function names exactly as listed in contract §6.
+  Schema changes are guarded `ALTER`s plus idempotent data migrations. There is no employee-creation UI (create/update
+  endpoints remain for admin/sync).
 
 ## Testing
 

@@ -8,11 +8,40 @@ public sealed class AccessRequestQuery : PagedQuery
 
     public string? CurrentStage { get; set; }
 
+    public string? AccessType { get; set; }
+
     public int? LocationId { get; set; }
 
     public int? EmployeeId { get; set; }
 
     public bool? Mine { get; set; }
+
+}
+
+public sealed class ApprovalQueueQuery : PagedQuery
+{
+    public string? Stage { get; set; }
+}
+
+public sealed class TeamRequestQuery : PagedQuery
+{
+    public string? RequestKind { get; set; }
+    public string? Status { get; set; }
+}
+
+public sealed class TeamRequestItemDto
+{
+    public string RequestKind { get; set; } = string.Empty;
+    public long RequestId { get; set; }
+    public string RequestNumber { get; set; } = string.Empty;
+    public string RequestType { get; set; } = string.Empty;
+    public int EmployeeId { get; set; }
+    public string EmployeeName { get; set; } = string.Empty;
+    public string EmployeeNumber { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? CurrentStage { get; set; }
+    public DateTime? SubmittedAtUtc { get; set; }
+    public string Route { get; set; } = string.Empty;
 }
 
 public class AccessRequestDto
@@ -26,6 +55,14 @@ public class AccessRequestDto
     public string? EmployeeName { get; set; }
 
     public string? EmployeeNumber { get; set; }
+
+    public string AccessType { get; set; } = "Building";
+
+    public int? BuildingLocationId { get; set; }
+
+    public string? BuildingLocationName { get; set; }
+
+    public string? DurationCode { get; set; }
 
     public int LocationId { get; set; }
 
@@ -100,28 +137,38 @@ public sealed class ApprovalDto
 
 public sealed class CreateAccessRequestRequest
 {
-    public int EmployeeId { get; set; }
+    public int? EmployeeId { get; set; }
+
+    public string? AccessType { get; set; }
+
+    public int BuildingLocationId { get; set; }
 
     public int LocationId { get; set; }
 
-    public string? BusinessJustification { get; set; }
+    public string? DurationCode { get; set; }
 
     public DateTime? ValidFromUtc { get; set; }
 
     public DateTime? ValidToUtc { get; set; }
 
-    public bool Submit { get; set; }
+    public string? Justification { get; set; }
 }
 
 public sealed class UpdateAccessRequestRequest
 {
+    public string? AccessType { get; set; }
+
+    public int BuildingLocationId { get; set; }
+
     public int LocationId { get; set; }
 
-    public string? BusinessJustification { get; set; }
+    public string? DurationCode { get; set; }
 
     public DateTime? ValidFromUtc { get; set; }
 
     public DateTime? ValidToUtc { get; set; }
+
+    public string? Justification { get; set; }
 
     public byte[]? Version { get; set; }
 }
@@ -136,7 +183,13 @@ public sealed class PendingApprovalDto
 
     public string? EmployeeNumber { get; set; }
 
+    public string? AccessType { get; set; }
+
+    public string? BuildingLocationName { get; set; }
+
     public string? LocationName { get; set; }
+
+    public string? DurationCode { get; set; }
 
     public bool IsRestricted { get; set; }
 

@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, input, output } from '@angular/core';
 import { FormControl, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
+import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MAT_DIALOG_DATA, MatDialog, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
 import { Observable, filter } from 'rxjs';
 import { MatFormFieldModule } from '@angular/material/form-field';
@@ -9,7 +10,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
 import { ApiError } from '../../../core/models/api.models';
-import { statusIcon, statusTone } from '../../../shared/utils/status-tone';
+import { StatusKind, statusIcon, statusLabel, statusTone } from '../../../shared/utils/status-tone';
 import { humanize } from './feature-kit';
 
 /** Status chip: colour + icon + text (never colour alone). */
@@ -23,9 +24,11 @@ import { humanize } from './feature-kit';
 })
 export class StatusChipComponent {
   readonly value = input<string | null | undefined>(null);
-  readonly tone = computed(() => statusTone(this.value()));
-  readonly icon = computed(() => statusIcon(this.value()));
-  readonly label = computed(() => humanize(this.value()));
+  /** Workflow vocabulary: `card-request` / `access-request` use the contract labels and tones. */
+  readonly kind = input<StatusKind>('generic');
+  readonly tone = computed(() => statusTone(this.value(), this.kind()));
+  readonly icon = computed(() => statusIcon(this.value(), this.kind()));
+  readonly label = computed(() => statusLabel(this.value(), this.kind()));
 }
 
 /** Error panel with message, validation details, correlation id and optional retry. */
@@ -86,17 +89,20 @@ export interface ReasonDialogData {
   /** Optional select shown above the text (e.g. target status). */
   options?: { label: string; values: string[]; value?: string };
   initialText?: string;
+  /** Optional checkbox shown below the text (e.g. "Provision now"). */
+  checkbox?: { label: string; hint?: string; value?: boolean };
 }
 
 export interface ReasonDialogResult {
   text: string;
   option?: string;
+  checked?: boolean;
 }
 
 /** Generic confirm / comment / reason dialog (comments required for Return / Reject etc.). */
 @Component({
   selector: 'eiw-reason-dialog',
-  imports: [MatDialogModule, MatButtonModule, MatFormFieldModule, MatInputModule, MatSelectModule, ReactiveFormsModule],
+  imports: [MatDialogModule, MatButtonModule, MatCheckboxModule, MatFormFieldModule, MatInputModule, MatSelectModule, ReactiveFormsModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <h2 mat-dialog-title>{{ data.title }}</h2>
@@ -130,6 +136,12 @@ export interface ReasonDialogResult {
           }
         </mat-form-field>
       }
+      @if (data.checkbox) {
+        <mat-checkbox [formControl]="checked">{{ data.checkbox.label }}</mat-checkbox>
+        @if (data.checkbox.hint) {
+          <p class="small text-muted ms-5 mb-0">{{ data.checkbox.hint }}</p>
+        }
+      }
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button type="button" mat-dialog-close>Cancel</button>
@@ -156,11 +168,17 @@ export class ReasonDialogComponent {
     validators: this.data.options ? [Validators.required] : [],
   });
 
+  readonly checked = new FormControl(this.data.checkbox?.value ?? false, { nonNullable: true });
+
   confirm(): void {
     this.text.markAsTouched();
     this.option.markAsTouched();
     if (this.text.invalid || this.option.invalid) return;
-    this.ref.close({ text: this.text.value.trim(), option: this.option.value || undefined });
+    this.ref.close({
+      text: this.text.value.trim(),
+      option: this.option.value || undefined,
+      checked: this.data.checkbox ? this.checked.value : undefined,
+    });
   }
 }
 

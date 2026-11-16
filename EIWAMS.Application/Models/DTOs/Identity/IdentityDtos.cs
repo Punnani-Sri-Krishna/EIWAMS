@@ -14,6 +14,18 @@ public sealed class CurrentUserDto
 
     public string? EmployeeNumber { get; set; }
 
+    public string? Designation { get; set; }
+
+    public string? DepartmentName { get; set; }
+
+    public string? ManagerName { get; set; }
+
+    public string? ManagerEmail { get; set; }
+
+    public string? LocationName { get; set; }
+
+    public bool HasPhoto { get; set; }
+
     public IReadOnlyList<string> Roles { get; set; } = [];
 
     public IReadOnlyList<string> Permissions { get; set; } = [];
@@ -48,6 +60,68 @@ public sealed class AuthConfigDto
     public string? ApiScope { get; set; }
 
     public string? Authority { get; set; }
+}
+
+public sealed class MyProfileDto
+{
+    public int EmployeeId { get; set; }
+    public string EmployeeNumber { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string? WorkEmail { get; set; }
+    public string? Designation { get; set; }
+    public string? DepartmentName { get; set; }
+    public string? ManagerName { get; set; }
+    public string? ManagerEmail { get; set; }
+    public string? LocationName { get; set; }
+    public string EmploymentStatus { get; set; } = string.Empty;
+    public DateOnly? JoinDate { get; set; }
+    public string? MobileNumber { get; set; }
+    public string? Address { get; set; }
+    public string? BloodGroup { get; set; }
+    public string? EmergencyContactName { get; set; }
+    public string? EmergencyContactNumber { get; set; }
+    public bool HasPhoto { get; set; }
+    public ActiveCardDto? ActiveCard { get; set; }
+}
+
+public sealed class ActiveCardDto
+{
+    public long CardId { get; set; }
+    public string MaskedUid { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime? IssuedAtUtc { get; set; }
+    public DateTime? ExpiresAtUtc { get; set; }
+}
+
+public sealed class UpdateMyProfileRequest
+{
+    public string? MobileNumber { get; set; }
+    public string? Address { get; set; }
+    public string? BloodGroup { get; set; }
+    public string? EmergencyContactName { get; set; }
+    public string? EmergencyContactNumber { get; set; }
+}
+
+public sealed class PhotoUploadRequest
+{
+    public string? PhotoContentType { get; set; }
+    public string? PhotoBase64 { get; set; }
+}
+
+public sealed class PhotoDto
+{
+    public string ContentType { get; set; } = string.Empty;
+    public string PhotoBase64 { get; set; } = string.Empty;
+    public int SizeBytes { get; set; }
+    public DateTime UploadedAtUtc { get; set; }
+}
+
+public sealed class PhotoInfoDto
+{
+    public bool HasPhoto { get; set; } = true;
+    public string ContentType { get; set; } = string.Empty;
+    public int SizeBytes { get; set; }
+    public DateTime UploadedAtUtc { get; set; }
 }
 
 public sealed class EntraUserDto
@@ -145,7 +219,21 @@ public sealed class LookupsDto
 
     public IReadOnlyList<string> CardRequestTypes { get; set; } = [];
 
+    public IReadOnlyList<string> CardRequestTypesOffered { get; set; } = [];
+
     public IReadOnlyList<string> CardRequestStatuses { get; set; } = [];
+
+    public IReadOnlyList<string> CardRequestStages { get; set; } = [];
+
+    public IReadOnlyList<string> CardRequestActions { get; set; } = [];
+
+    public IReadOnlyList<string> DamagedReasons { get; set; } = [];
+
+    public IReadOnlyList<string> BloodGroups { get; set; } = [];
+
+    public IReadOnlyList<string> AccessTypes { get; set; } = [];
+
+    public IReadOnlyList<string> DurationCodes { get; set; } = [];
 
     public IReadOnlyList<string> AccessRequestStatuses { get; set; } = [];
 

@@ -63,7 +63,14 @@ public sealed class IdentityRepository(IDbConnectionFactory factory) : Repositor
             CardTypes = LookupValues.CardTypes,
             CardStatuses = LookupValues.CardStatuses,
             CardRequestTypes = LookupValues.CardRequestTypes,
+            CardRequestTypesOffered = LookupValues.CardRequestTypesOffered,
             CardRequestStatuses = LookupValues.CardRequestStatuses,
+            CardRequestStages = LookupValues.CardRequestStages,
+            CardRequestActions = LookupValues.CardRequestActions,
+            DamagedReasons = LookupValues.DamagedReasons,
+            BloodGroups = LookupValues.BloodGroups,
+            AccessTypes = LookupValues.AccessTypes,
+            DurationCodes = LookupValues.DurationCodes,
             AccessRequestStatuses = LookupValues.AccessRequestStatuses,
             ApprovalStages = LookupValues.ApprovalStages,
             PermissionStatuses = LookupValues.PermissionStatuses,
@@ -76,6 +83,73 @@ public sealed class IdentityRepository(IDbConnectionFactory factory) : Repositor
             VisitorPassStatuses = LookupValues.VisitorPassStatuses,
             LocationTypes = LookupValues.LocationTypes,
         });
+
+    public Task<MyProfileDto> GetMyProfileAsync(ActorContext actor)
+        => QueryMultipleAsync(StoredProcedures.MeGetProfile, Read(actor), async grid =>
+        {
+            MyProfileDto profile = await grid.ReadFirstOrDefaultAsync<MyProfileDto>()
+                ?? throw AppException.NotFound(ApiMessages.NotFound);
+            profile.ActiveCard = await grid.ReadFirstOrDefaultAsync<ActiveCardDto>();
+            return profile;
+        });
+
+    public Task<MyProfileDto> UpdateMyProfileAsync(ActorContext actor, UpdateMyProfileRequest request)
+        => QueryMultipleAsync(StoredProcedures.MeUpdateProfile, Write(actor, new
+        {
+            request.MobileNumber,
+            request.Address,
+            request.BloodGroup,
+            request.EmergencyContactName,
+            request.EmergencyContactNumber,
+        }), async grid =>
+        {
+            MyProfileDto profile = await grid.ReadFirstOrDefaultAsync<MyProfileDto>()
+                ?? throw AppException.NotFound(ApiMessages.NotFound);
+            profile.ActiveCard = await grid.ReadFirstOrDefaultAsync<ActiveCardDto>();
+            return profile;
+        });
+
+    public async Task<PhotoDto> GetMyPhotoAsync(ActorContext actor)
+    {
+        PhotoRecord row = await QuerySingleAsync<PhotoRecord>(StoredProcedures.MeGetPhoto, Read(actor));
+        return ToPhotoDto(row);
+    }
+
+    public async Task<PhotoInfoDto> PutMyPhotoAsync(ActorContext actor, PhotoUploadRequest request)
+    {
+        byte[] bytes = DecodePhoto(request.PhotoBase64!);
+        PhotoInfoDto result = await QuerySingleAsync<PhotoInfoDto>(StoredProcedures.MePutPhoto, Write(actor, new
+        {
+            request.PhotoContentType,
+            Photo = bytes,
+        }));
+        return result;
+    }
+
+    private static PhotoDto ToPhotoDto(PhotoRecord row) => new()
+    {
+        ContentType = row.ContentType,
+        PhotoBase64 = Convert.ToBase64String(row.Photo),
+        SizeBytes = row.SizeBytes,
+        UploadedAtUtc = row.UploadedAtUtc,
+    };
+
+    private static byte[] DecodePhoto(string input)
+    {
+        string value = input.Trim();
+        int comma = value.IndexOf(',');
+        if (value.StartsWith("data:", StringComparison.OrdinalIgnoreCase) && comma >= 0)
+            value = value[(comma + 1)..];
+        return Convert.FromBase64String(value);
+    }
+
+    private sealed class PhotoRecord
+    {
+        public string ContentType { get; set; } = string.Empty;
+        public byte[] Photo { get; set; } = [];
+        public int SizeBytes { get; set; }
+        public DateTime UploadedAtUtc { get; set; }
+    }
 
     public Task<PagedResult<NotificationDto>> SearchNotificationsAsync(ActorContext actor, NotificationQuery query)
         => QueryPagedAsync<NotificationDto>(StoredProcedures.NotificationSearch, Read(actor, new { UnreadOnly = query.UnreadOnly ?? false }), query.Page, query.PageSize);

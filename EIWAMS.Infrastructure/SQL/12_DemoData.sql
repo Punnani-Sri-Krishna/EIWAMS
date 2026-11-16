@@ -24,17 +24,22 @@ DECLARE @U TABLE (UserId INT PRIMARY KEY, DisplayName NVARCHAR(200), Email NVARC
 INSERT @U VALUES
  (2,  N'Hari Krishnan',   N'hari.krishnan@eiwams.local',   0, N'Employee,HRAdmin',       N'BLR,PUN'),
  (3,  N'Meera Iyer',      N'meera.iyer@eiwams.local',      0, N'Employee,Manager',       N'BLR'),
- (4,  N'Sanjay Kulkarni', N'sanjay.kulkarni@eiwams.local', 0, N'Employee,SecurityTeam',  N'BLR,PUN'),
- (5,  N'Farah Sheikh',    N'farah.sheikh@eiwams.local',    0, N'Employee,FacilityAdmin', N'BLR'),
+ (4,  N'Sanjay Kulkarni', N'sanjay.kulkarni@eiwams.local', 0, N'Employee,SecurityTeam,SecurityHead', N'BLR,PUN'),
+ (5,  N'Farah Sheikh',    N'farah.sheikh@eiwams.local',    0, N'Employee,FacilityAdmin,AccessControlTeam', N'BLR'),
  (6,  N'Ravi Shankar',    N'ravi.shankar@eiwams.local',    0, N'Reception',              N'BLR-TA'),
  (7,  N'Esha Patel',      N'esha.patel@eiwams.local',      0, N'Employee',               N''),
  (8,  N'Arjun Mehta',     N'arjun.mehta@eiwams.local',     1, N'Auditor',                N''),
  (9,  N'Vikram Rao',      N'vikram.rao@eiwams.local',      0, N'Employee',               N''),
- (10, N'Priya Nair',      N'priya.nair@eiwams.local',      0, N'Employee',               N'');
+ (10, N'Priya Nair',      N'priya.nair@eiwams.local',      0, N'Employee',               N''),
+ (11, N'Sai Sharanya',   N'sai.sharanya@eiwams.local',    1, N'Employee,Manager,SecurityHead', N''),
+ (12, N'Isha Card Desk', N'idcard.team@eiwams.local',     0, N'Employee,IdCardTeam',     N'BLR'),
+ (13, N'Arvind Access Control', N'access.control@eiwams.local', 1, N'Employee,AccessControlTeam', N''),
+ (14, N'Kiran Das',      N'kiran.das@eiwams.local',       0, N'Employee',               N''),
+ (15, N'Neha Joshi',     N'neha.joshi@eiwams.local',      0, N'Employee',               N'');
 
 DECLARE @Id INT = 2;
 SET IDENTITY_INSERT dbo.Users ON;
-WHILE @Id <= 10
+WHILE @Id <= 15
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM dbo.Users u JOIN @U s ON s.Email = u.Email WHERE s.UserId = @Id)
        AND NOT EXISTS (SELECT 1 FROM dbo.Users WHERE UserId = @Id)
@@ -89,10 +94,22 @@ INSERT @L VALUES
  (18, N'PUN-P1-GATE',  N'PUN-P1',    N'Plant 1 Main Gate',              N'Zone',     0),
  (19, N'PUN-P1-SF',    N'PUN-P1',    N'Plant 1 - Shop Floor',           N'Floor',    0),
  (20, N'PUN-P1-PROD',  N'PUN-P1-SF', N'Production Line',                N'Zone',     1),
- (21, N'PUN-P1-QC',    N'PUN-P1-SF', N'Quality Control Lab',            N'Zone',     1);
+ (21, N'PUN-P1-QC',    N'PUN-P1-SF', N'Quality Control Lab',            N'Zone',     1),
+ (22, N'BLR-BA',       N'BLR',       N'Building A',                      N'Building', 0),
+ (23, N'BLR-BA-F1',    N'BLR-BA',    N'Floor 1',                         N'Floor',    0),
+ (24, N'BLR-BA-WE',    N'BLR-BA',    N'East Wing',                       N'Wing',     0),
+ (25, N'BLR-BA-WW',    N'BLR-BA',    N'West Wing',                       N'Wing',     0),
+ (26, N'BLR-BB',       N'BLR',       N'Building B',                      N'Building', 0),
+ (27, N'BLR-BB-F1',    N'BLR-BB',    N'Floor 1',                         N'Floor',    0),
+ (28, N'BLR-BB-F2',    N'BLR-BB',    N'Floor 2',                         N'Floor',    0),
+ (29, N'BLR-CO',       N'BLR',       N'Corporate Office',                N'Building', 0),
+ (30, N'BLR-CO-F1',    N'BLR-CO',    N'Floor 1',                         N'Floor',    0),
+ (31, N'BLR-CO-EXE',   N'BLR-CO',    N'Executive Wing',                  N'Wing',     1),
+ (32, N'BLR-DCB',      N'BLR',       N'Data Center',                     N'Building', 1),
+ (33, N'BLR-DCB-H1',   N'BLR-DCB',   N'Server Hall 1',                   N'Zone',     1);
 
 DECLARE @k INT = 1;
-WHILE @k <= 21
+WHILE @k <= 33
 BEGIN
     INSERT dbo.Locations (ParentLocationId, LocationCode, LocationName, LocationType, IsRestricted)
     SELECT p.LocationId, s.LocationCode, s.LocationName, s.LocationType, s.IsRestricted
@@ -161,10 +178,15 @@ INSERT @E VALUES
  (26, N'EMP1017', N'Shreya',    N'Ghosh',        N'Permanent', N'ENG', N'BLR-TA', N'EMP0003', NULL, 1600, N'Exited', 20),
  (27, N'EMP1018', N'Varun',     N'Malhotra',     N'Vendor',    N'FAC', N'BLR-TB', N'EMP0005', NULL,  150, N'Active', NULL),
  (28, N'EMP1019', N'Ishita',    N'Banerjee',     N'Permanent', N'FIN', N'BLR-TA', N'EMP0008', NULL,  990, N'Inactive', 5),
- (29, N'EMP1020', N'Gaurav',    N'Saxena',       N'Permanent', N'RND', N'BLR-TA', N'EMP0003', NULL, 1250, N'Active', NULL);
+ (29, N'EMP1020', N'Gaurav',    N'Saxena',       N'Permanent', N'RND', N'BLR-TA', N'EMP0003', NULL, 1250, N'Active', NULL),
+ (30, N'EMP0011', N'Sai',       N'Sharanya',      N'Permanent', N'ENG', N'BLR-TA', NULL, N'sai.sharanya@eiwams.local', 900, N'Active', NULL),
+ (31, N'EMP0012', N'Isha',      N'Card Desk',     N'Permanent', N'HR',  N'BLR-TA', NULL, N'idcard.team@eiwams.local', 700, N'Active', NULL),
+ (32, N'EMP0013', N'Arvind',    N'Access Control',N'Permanent', N'SEC', N'BLR-TA', NULL, N'access.control@eiwams.local', 800, N'Active', NULL),
+ (33, N'EMP0014', N'Kiran',     N'Das',           N'Permanent', N'ENG', N'BLR-TA', N'EMP0011', N'kiran.das@eiwams.local', 350, N'Active', NULL),
+ (34, N'EMP0015', N'Neha',      N'Joshi',         N'Permanent', N'ENG', N'BLR-TA', N'EMP0011', N'neha.joshi@eiwams.local', 250, N'Active', NULL);
 
 SET @k = 1;
-WHILE @k <= 29
+WHILE @k <= 34
 BEGIN
     INSERT dbo.Employees (EmployeeNumber, FirstName, LastName, WorkEmail, EmployeeType, DepartmentId, ManagerEmployeeId, LocationId,
                           EmploymentStatus, JoinDate, EndDate, UserId, CreatedByUserId)
@@ -183,6 +205,28 @@ BEGIN
     SET @k += 1;
 END
 
+UPDATE e SET Designation = CASE e.EmployeeNumber
+    WHEN N'EMP0011' THEN N'Engineering Manager'
+    WHEN N'EMP0012' THEN N'ID Card Officer'
+    WHEN N'EMP0013' THEN N'Access Control Officer'
+    WHEN N'EMP0014' THEN N'Software Engineer'
+    WHEN N'EMP0015' THEN N'QA Engineer'
+    WHEN N'EMP0003' THEN N'Engineering Manager'
+    WHEN N'EMP0002' THEN N'HR Administrator'
+    WHEN N'EMP0004' THEN N'Security Officer'
+    WHEN N'EMP0005' THEN N'Facilities Administrator'
+    WHEN N'EMP0007' THEN N'Software Engineer'
+    ELSE CONCAT(d.DepartmentName, N' Associate') END
+FROM dbo.Employees e JOIN dbo.Departments d ON d.DepartmentId=e.DepartmentId
+WHERE e.Designation IS NULL;
+
+UPDATE dbo.Employees SET MobileNumber=N'+91 90000 00007', Address=N'Bengaluru', BloodGroup=N'O+',
+    EmergencyContactName=N'Anita Patel', EmergencyContactNumber=N'+91 90000 00008'
+WHERE EmployeeNumber=N'EMP0007' AND MobileNumber IS NULL;
+UPDATE dbo.Employees SET MobileNumber=N'+91 90000 00111', Address=N'Bengaluru', BloodGroup=N'A+',
+    EmergencyContactName=N'Kiran Sharanya', EmergencyContactNumber=N'+91 90000 00112'
+WHERE EmployeeNumber=N'EMP0011' AND MobileNumber IS NULL;
+
 UPDATE d SET HeadUserId = u.UserId
 FROM dbo.Departments d
 JOIN (VALUES (N'ENG', N'meera.iyer@eiwams.local'), (N'HR', N'hari.krishnan@eiwams.local'), (N'SEC', N'sanjay.kulkarni@eiwams.local'),
@@ -192,6 +236,8 @@ WHERE d.HeadUserId IS NULL;
 
 COMMIT;
 GO
+
+/* v2 demo workflow rows are seeded after Part 2. */
 
 /*============================== PART 2 ==============================*/
 IF EXISTS (SELECT 1 FROM dbo.RFIDCards WHERE CardUid = N'04A10000000007')
@@ -223,7 +269,8 @@ SELECT CONCAT(N'04A1', RIGHT(CONCAT(N'0000000000', SUBSTRING(e.EmployeeNumber, 4
        CASE WHEN e.EmployeeType = N'Intern' THEN DATEADD(DAY, 60, @Now) END,
        N'Synced', @Hari
 FROM dbo.Employees e
-WHERE e.EmployeeNumber LIKE N'EMP[01]%' AND e.EmployeeNumber <> N'EMP1002';
+WHERE e.EmployeeNumber LIKE N'EMP[01]%'
+  AND e.EmployeeNumber NOT IN (N'EMP1002',N'EMP0014',N'EMP0015');
 
 UPDATE dbo.RFIDCards SET Status = N'Blocked', BlockedAtUtc = DATEADD(DAY, -3, @Now), BlockReason = N'Card cloned - suspected tampering at shop floor kiosk'
 WHERE CardUid = N'04A10000001012';
@@ -259,14 +306,16 @@ JOIN dbo.Locations l ON l.LocationCode = p.LocationCode;
 
 /*------------------------ Access request workflows ------------------*/
 DECLARE @Res TABLE (Id BIGINT);
-DECLARE @Ar BIGINT, @V BINARY(8), @EmpId INT, @LocId INT, @From DATETIME2(3), @To DATETIME2(3);
+DECLARE @Ar BIGINT, @V BINARY(8), @EmpId INT, @LocId INT, @BuildingLocId INT, @From DATETIME2(3), @To DATETIME2(3);
 DECLARE @CreatedRequest TABLE (AccessRequestId BIGINT);
 
 -- R1: Esha -> ODC 1, fully approved and provisioned.
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0007';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-ODC1';
-SET @From = DATEADD(DAY, -1, @Now); SET @To = DATEADD(DAY, 180, @Now);
-EXEC dbo.usp_AccessRequest_Create @Esha, @EmpId, @LocId, N'Assigned to the Northwind banking ODC programme; daily on-site delivery.', @From, @To, 1;
+SET @From = @Now; SET @To = DATEADD(DAY, 180, @Now);
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Esha,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Assigned to the Northwind banking ODC programme; daily on-site delivery.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Approve', N'Confirmed project allocation.', @V;
@@ -280,7 +329,9 @@ EXEC dbo.usp_Permission_Provision @Farah, @Ar;
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0009';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TB-DC';
 SET @From = DATEADD(DAY, 1, @Now); SET @To = DATEADD(DAY, 90, @Now);
-EXEC dbo.usp_AccessRequest_Create @Vikram, @EmpId, @LocId, N'On-call rotation for storage cluster migration.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Vikram,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'On-call rotation for storage cluster migration.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Approve', NULL, @V;
@@ -293,7 +344,9 @@ EXEC dbo.usp_Approval_Decide @Farah, @Ar, N'Approve', NULL, @V;
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0010';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-ODC2';
 SET @From = @Now; SET @To = DATEADD(DAY, 120, @Now);
-EXEC dbo.usp_AccessRequest_Create @Priya, @EmpId, @LocId, N'Joining the Contoso insurance ODC as test lead.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Priya,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Joining the Contoso insurance ODC as test lead.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Approve', NULL, @V;
@@ -302,19 +355,25 @@ EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Approve', NULL, @V;
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0009';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-RND';
 SET @From = DATEADD(DAY, 2, @Now); SET @To = DATEADD(DAY, 60, @Now);
-EXEC dbo.usp_AccessRequest_Create @Vikram, @EmpId, @LocId, N'Prototype hardware validation with the R&D team.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Vikram,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Prototype hardware validation with the R&D team.',@ValidFromUtc=@From,@ValidToUtc=@To;
 
 -- R5: Esha -> Data Centre, still a draft.
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0007';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TB-DC';
 SET @From = DATEADD(DAY, 7, @Now); SET @To = DATEADD(DAY, 37, @Now);
-EXEC dbo.usp_AccessRequest_Create @Esha, @EmpId, @LocId, N'Rack-and-stack support for the Q3 hardware refresh.', @From, @To, 0;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Esha,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Rack-and-stack support for the Q3 hardware refresh.',@ValidFromUtc=@From,@ValidToUtc=@To;
 
 -- R6: Priya -> Data Centre, returned by the manager.
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0010';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TB-DC';
 SET @From = DATEADD(DAY, 1, @Now); SET @To = DATEADD(DAY, 200, @Now);
-EXEC dbo.usp_AccessRequest_Create @Priya, @EmpId, @LocId, N'Occasional troubleshooting.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Priya,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Occasional troubleshooting.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Return', N'Please narrow the window to the planned maintenance dates and name the change ticket.', @V;
@@ -323,7 +382,9 @@ EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Return', N'Please narrow the window 
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0009';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'PUN-P1-PROD';
 SET @From = DATEADD(DAY, 3, @Now); SET @To = DATEADD(DAY, 10, @Now);
-EXEC dbo.usp_AccessRequest_Create @Vikram, @EmpId, @LocId, N'Plant visit for MES integration.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Vikram,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Plant visit for MES integration.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Reject', N'Remote access to the MES sandbox is sufficient; no production floor access needed.', @V;
@@ -332,7 +393,9 @@ EXEC dbo.usp_Approval_Decide @Meera, @Ar, N'Reject', N'Remote access to the MES 
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP0010';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-RND';
 SET @From = DATEADD(DAY, 5, @Now); SET @To = DATEADD(DAY, 20, @Now);
-EXEC dbo.usp_AccessRequest_Create @Priya, @EmpId, @LocId, N'Demo day support.', @From, @To, 0;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Priya,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'Demo day support.',@ValidFromUtc=@From,@ValidToUtc=@To;
 SET @Ar = (SELECT MAX(AccessRequestId) FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocId);
 SET @V = (SELECT Version FROM dbo.AccessRequests WHERE AccessRequestId = @Ar);
 EXEC dbo.usp_AccessRequest_Cancel @Priya, @Ar, N'Demo day moved to the Pune campus.', @V;
@@ -340,42 +403,25 @@ EXEC dbo.usp_AccessRequest_Cancel @Priya, @Ar, N'Demo day moved to the Pune camp
 -- R9: Ananya -> ODC 2, Expired historic request (window passed before it was decided).
 DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_AccessRequestNumber;
 INSERT dbo.AccessRequests (RequestNumber, EmployeeId, LocationId, RequesterUserId, BusinessJustification, ValidFromUtc, ValidToUtc, Status,
-                           SubmittedAtUtc, DecidedAtUtc, CreatedAtUtc)
+                           SubmittedAtUtc, DecidedAtUtc, CreatedAtUtc, AccessType, BuildingLocationId, DurationCode)
 SELECT CONCAT(N'EAW-', YEAR(@Now), N'-', RIGHT(CONCAT(N'000000', @Seq), 6)), e.EmployeeId, l.LocationId, @Meera,
        N'Short-term support for the ODC 2 go-live weekend.', DATEADD(DAY, -40, @Now), DATEADD(DAY, -33, @Now), N'Expired',
-       DATEADD(DAY, -42, @Now), DATEADD(DAY, -33, @Now), DATEADD(DAY, -42, @Now)
+       DATEADD(DAY, -42, @Now), DATEADD(DAY, -33, @Now), DATEADD(DAY, -42, @Now), N'WingFloor', b.LocationId, N'OneWeek'
 FROM dbo.Employees e CROSS JOIN dbo.Locations l
+JOIN dbo.Locations b ON b.LocationCode=N'BLR-TA'
 WHERE e.EmployeeNumber = N'EMP1001' AND l.LocationCode = N'BLR-TA-ODC2';
 
 -- R10: Rohan (new joiner) -> ODC 1, raised by HR on his behalf; waits for Meera at the manager stage.
 SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP1002';
 SELECT @LocId = LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-ODC1';
 SET @From = @Now; SET @To = DATEADD(DAY, 180, @Now);
-EXEC dbo.usp_AccessRequest_Create @Hari, @EmpId, @LocId, N'New joiner onboarding to the Northwind banking ODC.', @From, @To, 1;
+SELECT TOP(1) @BuildingLocId=l.LocationId FROM dbo.fn_LocationAncestors(@LocId) a JOIN dbo.Locations l ON l.LocationId=a.LocationId WHERE l.LocationType=N'Building';
+EXEC dbo.usp_AccessRequest_Create @ActorUserId=@Hari,@EmployeeId=@EmpId,@AccessType=N'WingFloor',@BuildingLocationId=@BuildingLocId,
+    @LocationId=@LocId,@DurationCode=N'Custom',@BusinessJustification=N'New joiner onboarding to the Northwind banking ODC.',@ValidFromUtc=@From,@ValidToUtc=@To;
 
-/*------------------------------ Card requests ------------------------*/
-DECLARE @Cr BIGINT, @CardId BIGINT;
--- Rohan: New card -> verified -> approved -> issued (card awaiting activation).
-SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP1002';
-EXEC dbo.usp_CardRequest_Create @Hari, @EmpId, N'New', NULL, N'New joiner - first ID card.', NULL;
-SET @Cr = (SELECT MAX(CardRequestId) FROM dbo.CardRequests WHERE EmployeeId = @EmpId);
-EXEC dbo.usp_CardRequest_Decide @Sanjay, @Cr, N'Verify', N'Photo ID and offer letter verified.';
-EXEC dbo.usp_CardRequest_Decide @Admin, @Cr, N'Approve', NULL;
-EXEC dbo.usp_Card_Create @Hari, @EmpId, N'04A10000001002', N'Permanent', NULL, @Cr;
-
--- Ananya: damaged card awaiting verification.
-SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP1001';
-SELECT @CardId = CardId FROM dbo.RFIDCards WHERE CardUid = N'04A10000001001';
-EXEC dbo.usp_CardRequest_Create @Hari, @EmpId, N'Damaged', @CardId, N'Card cracked; reader intermittently fails to detect it.', NULL;
-
--- Deepika: temporary card extension rejected.
-SELECT @EmpId = EmployeeId FROM dbo.Employees WHERE EmployeeNumber = N'EMP1015';
-SET @To = DATEADD(DAY, 120, @Now);
-EXEC dbo.usp_CardRequest_Create @Hari, @EmpId, N'Temporary', NULL, N'Internship extension pending approval.', @To;
-SET @Cr = (SELECT MAX(CardRequestId) FROM dbo.CardRequests WHERE EmployeeId = @EmpId);
-EXEC dbo.usp_CardRequest_Decide @Sanjay, @Cr, N'Reject', N'Extension letter not yet issued by HR; re-apply once approved.';
-
--- Aditya: card reported lost (blocks immediately and opens a Lost card request).
+/* Card requests are seeded in the v2 run-once block below. */
+DECLARE @CardId BIGINT;
+-- Aditya: legacy report-lost endpoint blocks immediately; the v2 request is raised separately.
 SELECT @CardId = CardId FROM dbo.RFIDCards WHERE CardUid = N'04A10000001004';
 EXEC dbo.usp_Card_ReportLost @Sanjay, @CardId, N'Employee reported wallet stolen during commute.';
 
@@ -518,4 +564,19 @@ SET @SubjectId = @Vis;
 EXEC dbo.usp_Blacklist_Create @Sanjay, N'Visitor', @SubjectId, N'Attempted entry with forged identification.', NULL;
 
 COMMIT;
+GO
+
+/* Idempotent v2 workflow sample: a new card request waits at manager review. */
+IF NOT EXISTS (SELECT 1 FROM dbo.SystemSettings WHERE SettingKey=N'Demo.V2Seeded')
+BEGIN
+    DECLARE @V2User INT=(SELECT UserId FROM dbo.Users WHERE Email=N'kiran.das@eiwams.local'),
+            @V2EmployeeId INT=(SELECT EmployeeId FROM dbo.Employees WHERE EmployeeNumber=N'EMP0014'),
+            @V2PhotoBytes VARBINARY(MAX)=0xFFD8FF;
+    EXEC dbo.usp_CardRequest_Create @ActorUserId=@V2User,@EmployeeId=@V2EmployeeId,@RequestType=N'New',@Reason=NULL,
+         @MobileNumber=N'+91 90000 00114',@Address=N'Bengaluru',@BloodGroup=N'O+',
+         @EmergencyContactName=N'Demo Contact',@EmergencyContactNumber=N'+91 90000 00115',
+         @PhotoContentType=N'image/jpeg',@Photo=@V2PhotoBytes;
+    INSERT dbo.SystemSettings(SettingKey,SettingValue,Description,DataType,UpdatedAtUtc,UpdatedByUserId)
+    VALUES(N'Demo.V2Seeded',N'true',N'V2 card request demo workflow seeded',N'Bool',SYSUTCDATETIME(),@V2User);
+END
 GO

@@ -1,7 +1,7 @@
 /*=====================================================================
   EIWAMS - 06_SP_Access.sql
   Access requests (draft, submit, edit, cancel), multi-stage approvals
-  (Manager -> Security -> FacilityAdmin) and access permissions
+  (Manager -> SecurityHead/Security -> AccessControl) and access permissions
   (provision, revoke, search). BR: separation of duties, facility scope,
   return/reject need comments, provisioning only after approval.
 =====================================================================*/
@@ -13,7 +13,7 @@ CREATE OR ALTER FUNCTION dbo.fn_StageOrder (@Stage NVARCHAR(20))
 RETURNS INT
 AS
 BEGIN
-    RETURN CASE @Stage WHEN N'Manager' THEN 1 WHEN N'Security' THEN 2 WHEN N'FacilityAdmin' THEN 3 END;
+    RETURN CASE @Stage WHEN N'Manager' THEN 1 WHEN N'SecurityHead' THEN 2 WHEN N'Security' THEN 2 WHEN N'AccessControl' THEN 3 END;
 END
 GO
 
@@ -53,7 +53,8 @@ BEGIN
 
     IF NOT EXISTS (SELECT 1 FROM @Candidates)
     BEGIN
-        DECLARE @Role NVARCHAR(50) = CASE @Stage WHEN N'Manager' THEN N'Manager' WHEN N'Security' THEN N'SecurityTeam' ELSE N'FacilityAdmin' END;
+        DECLARE @Role NVARCHAR(50) = CASE @Stage WHEN N'Manager' THEN N'Manager' WHEN N'Security' THEN N'SecurityTeam'
+                                                  WHEN N'SecurityHead' THEN N'SecurityHead' ELSE N'AccessControlTeam' END;
         INSERT @Candidates
         SELECT DISTINCT u.UserId
         FROM dbo.Users u
@@ -92,6 +93,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_AccessRequest_Search
     @ActorUserId  INT,
     @Status       NVARCHAR(20) = NULL,
     @CurrentStage NVARCHAR(20) = NULL,
+    @AccessType   NVARCHAR(20) = NULL,
     @LocationId   INT = NULL,
     @EmployeeId   INT = NULL,
     @Mine         BIT = NULL,
@@ -116,6 +118,7 @@ BEGIN
     JOIN dbo.fn_VisibleAccessRequests(@ActorUserId) x ON x.AccessRequestId = v.AccessRequestId
     WHERE (@Status IS NULL OR v.Status = @Status)
       AND (@CurrentStage IS NULL OR v.CurrentStage = @CurrentStage)
+      AND (@AccessType IS NULL OR v.AccessType = @AccessType)
       AND (@LocationId IS NULL OR v.LocationId IN (SELECT LocationId FROM dbo.fn_LocationDescendants(@LocationId)))
       AND (@EmployeeId IS NULL OR v.EmployeeId = @EmployeeId)
       AND (ISNULL(@Mine, 0) = 0 OR v.RequesterUserId = @ActorUserId OR v.EmployeeUserId = @ActorUserId)
@@ -124,7 +127,8 @@ BEGIN
 
     SELECT COUNT(*) AS TotalCount FROM #f;
 
-    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeId, v.EmployeeName, v.EmployeeNumber, v.LocationId, v.LocationName, v.LocationCode,
+    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeId, v.EmployeeName, v.EmployeeNumber, v.AccessType, v.BuildingLocationId,
+           v.BuildingLocationName, v.DurationCode, v.LocationId, v.LocationName, v.LocationCode,
            v.IsRestricted, v.RequesterUserId, v.RequesterName, v.BusinessJustification, v.ValidFromUtc, v.ValidToUtc, v.Status, v.CurrentStage,
            v.CurrentApproverNames, v.SubmittedAtUtc, v.CreatedAtUtc, v.UpdatedAtUtc, v.Version
     FROM dbo.vw_AccessRequests v JOIN #f f ON f.AccessRequestId = v.AccessRequestId
@@ -161,7 +165,8 @@ BEGIN
     DECLARE @CanProvision BIT = CASE WHEN @Status = N'Approved' AND @IsOwner = 0
         AND dbo.fn_HasPermission(@ActorUserId, N'Permissions.Provision') = 1 AND dbo.fn_UserCanAccessLocation(@ActorUserId, @LocId) = 1 THEN 1 ELSE 0 END;
 
-    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeId, v.EmployeeName, v.EmployeeNumber, v.LocationId, v.LocationName, v.LocationCode,
+    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeId, v.EmployeeName, v.EmployeeNumber, v.AccessType, v.BuildingLocationId,
+           v.BuildingLocationName, v.DurationCode, v.LocationId, v.LocationName, v.LocationCode,
            v.IsRestricted, v.RequesterUserId, v.RequesterName, v.BusinessJustification, v.ValidFromUtc, v.ValidToUtc, v.Status, v.CurrentStage,
            v.CurrentApproverNames, v.SubmittedAtUtc, v.CreatedAtUtc, v.UpdatedAtUtc, v.Version,
            ap.PermissionId, ap.Status AS PermissionStatus,
@@ -201,14 +206,15 @@ GO
 /*------------------------------ Mutations ---------------------------*/
 CREATE OR ALTER PROCEDURE dbo.usp_Internal_ValidateAccessWindow
     @ValidFromUtc DATETIME2(3),
-    @ValidToUtc   DATETIME2(3)
+    @ValidToUtc   DATETIME2(3),
+    @DurationCode NVARCHAR(20) = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
     IF @ValidFromUtc IS NULL OR @ValidToUtc IS NULL THROW 50400, N'Valid-from and valid-to are required.', 1;
     IF @ValidToUtc <= @ValidFromUtc THROW 50400, N'Valid-to must be after valid-from.', 1;
     IF @ValidToUtc <= SYSUTCDATETIME() THROW 50400, N'Valid-to must be in the future.', 1;
-    DECLARE @MaxDays INT = dbo.fn_SettingInt(N'AccessRequest.MaxValidityDays', 365);
+    DECLARE @MaxDays INT = CASE WHEN @DurationCode = N'Permanent' THEN 3653 ELSE dbo.fn_SettingInt(N'AccessRequest.MaxValidityDays', 365) END;
     IF DATEDIFF(DAY, @ValidFromUtc, @ValidToUtc) > @MaxDays
     BEGIN
         DECLARE @Msg NVARCHAR(200) = CONCAT(N'The access window cannot exceed ', @MaxDays, N' days.');
@@ -225,17 +231,19 @@ CREATE OR ALTER PROCEDURE dbo.usp_Internal_SubmitAccessRequest
 AS
 BEGIN
     SET NOCOUNT ON;
-    DECLARE @Cycle INT, @Number NVARCHAR(20), @From DATETIME2(3), @To DATETIME2(3), @EmpStatus NVARCHAR(20), @OldStatus NVARCHAR(20);
-    SELECT @Cycle = ar.Cycle + 1, @Number = ar.RequestNumber, @From = ar.ValidFromUtc, @To = ar.ValidToUtc, @EmpStatus = e.EmploymentStatus, @OldStatus = ar.Status
+    DECLARE @Cycle INT, @Number NVARCHAR(20), @From DATETIME2(3), @To DATETIME2(3), @EmpStatus NVARCHAR(20), @OldStatus NVARCHAR(20), @AccessType NVARCHAR(20), @DurationCode NVARCHAR(20);
+    SELECT @Cycle = ar.Cycle + 1, @Number = ar.RequestNumber, @From = ar.ValidFromUtc, @To = ar.ValidToUtc,
+           @EmpStatus = e.EmploymentStatus, @OldStatus = ar.Status, @AccessType = ar.AccessType, @DurationCode = ar.DurationCode
     FROM dbo.AccessRequests ar JOIN dbo.Employees e ON e.EmployeeId = ar.EmployeeId WHERE ar.AccessRequestId = @AccessRequestId;
     IF @EmpStatus <> N'Active' THROW 50422, N'Access cannot be requested for an inactive or exited employee.', 1;
-    EXEC dbo.usp_Internal_ValidateAccessWindow @From, @To;
+    EXEC dbo.usp_Internal_ValidateAccessWindow @From, @To, @DurationCode;
 
     UPDATE dbo.AccessRequests SET Status = N'PendingApproval', CurrentStage = N'Manager', Cycle = @Cycle, SubmittedAtUtc = SYSUTCDATETIME(),
            DecidedAtUtc = NULL, UpdatedAtUtc = SYSUTCDATETIME()
     WHERE AccessRequestId = @AccessRequestId;
+    DECLARE @SecurityStage NVARCHAR(20) = CASE @AccessType WHEN N'WingFloor' THEN N'Security' ELSE N'SecurityHead' END;
     INSERT dbo.AccessRequestApprovals (AccessRequestId, Cycle, Stage, StageOrder)
-    VALUES (@AccessRequestId, @Cycle, N'Manager', 1), (@AccessRequestId, @Cycle, N'Security', 2), (@AccessRequestId, @Cycle, N'FacilityAdmin', 3);
+    VALUES (@AccessRequestId, @Cycle, N'Manager', 1), (@AccessRequestId, @Cycle, @SecurityStage, 2), (@AccessRequestId, @Cycle, N'AccessControl', 3);
     EXEC dbo.usp_Internal_AssignApprovers @AccessRequestId, N'Manager', @ActorUserId;
 
     DECLARE @Summary NVARCHAR(500) = CONCAT(N'Access request ', @Number, N' submitted (cycle ', @Cycle, N'); awaiting Manager approval.');
@@ -247,12 +255,14 @@ GO
 
 CREATE OR ALTER PROCEDURE dbo.usp_AccessRequest_Create
     @ActorUserId           INT,
-    @EmployeeId            INT,
+    @EmployeeId            INT = NULL,
+    @AccessType             NVARCHAR(20),
+    @BuildingLocationId     INT,
     @LocationId            INT,
+    @DurationCode           NVARCHAR(20),
     @BusinessJustification NVARCHAR(1000),
-    @ValidFromUtc          DATETIME2(3),
-    @ValidToUtc            DATETIME2(3),
-    @Submit                BIT = 0,
+    @ValidFromUtc          DATETIME2(3) = NULL,
+    @ValidToUtc            DATETIME2(3) = NULL,
     @CorrelationId         UNIQUEIDENTIFIER = NULL,
     @IpAddress             VARCHAR(45) = NULL
 AS
@@ -262,11 +272,34 @@ BEGIN
     BEGIN TRY
         SET @BusinessJustification = NULLIF(LTRIM(RTRIM(@BusinessJustification)), N'');
         IF @BusinessJustification IS NULL THROW 50400, N'A business justification is required.', 1;
-        EXEC dbo.usp_Internal_ValidateAccessWindow @ValidFromUtc, @ValidToUtc;
-        IF NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @LocationId AND IsActive = 1)
-            THROW 50400, N'The location does not exist or is inactive.', 1;
+        IF @AccessType NOT IN (N'Building', N'WingFloor') THROW 50400, N'Invalid accessType.', 1;
+        IF @DurationCode NOT IN (N'OneWeek',N'OneMonth',N'ThreeMonths',N'SixMonths',N'OneYear',N'Permanent',N'Custom')
+            THROW 50400, N'Invalid durationCode.', 1;
+        DECLARE @Now DATETIME2(3) = SYSUTCDATETIME(), @EffectiveFrom DATETIME2(3) = COALESCE(@ValidFromUtc, SYSUTCDATETIME()),
+                @EffectiveTo DATETIME2(3);
+        IF @EffectiveFrom < DATEADD(MINUTE, -5, @Now) THROW 50400, N'validFromUtc cannot be earlier than five minutes ago.', 1;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @BuildingLocationId AND LocationType = N'Building' AND IsActive = 1)
+            THROW 50400, N'buildingLocationId must identify an active building.', 1;
+        IF @AccessType = N'Building' AND @LocationId <> @BuildingLocationId
+            THROW 50400, N'For Building access, locationId must equal buildingLocationId.', 1;
+        IF @AccessType = N'WingFloor' AND (@LocationId = @BuildingLocationId OR NOT EXISTS
+            (SELECT 1 FROM dbo.fn_LocationDescendants(@BuildingLocationId) d JOIN dbo.Locations l ON l.LocationId = d.LocationId
+             WHERE d.LocationId = @LocationId AND l.LocationType IN (N'Floor',N'Wing',N'Zone') AND l.IsActive = 1))
+            THROW 50400, N'WingFloor location must be an active Floor, Wing or Zone within the selected building.', 1;
+        IF @DurationCode = N'Custom'
+        BEGIN
+            SET @EffectiveTo = @ValidToUtc;
+            IF @EffectiveTo IS NULL OR @EffectiveTo <= @EffectiveFrom OR @EffectiveTo > DATEADD(YEAR, 1, @EffectiveFrom)
+                THROW 50400, N'Custom validToUtc must be after validFromUtc and no more than one year later.', 1;
+        END
+        ELSE
+            SET @EffectiveTo = CASE @DurationCode WHEN N'OneWeek' THEN DATEADD(DAY,7,@EffectiveFrom)
+                WHEN N'OneMonth' THEN DATEADD(MONTH,1,@EffectiveFrom) WHEN N'ThreeMonths' THEN DATEADD(MONTH,3,@EffectiveFrom)
+                WHEN N'SixMonths' THEN DATEADD(MONTH,6,@EffectiveFrom) WHEN N'OneYear' THEN DATEADD(YEAR,1,@EffectiveFrom)
+                ELSE DATEADD(YEAR,10,@EffectiveFrom) END;
 
         DECLARE @EmpStatus NVARCHAR(20), @EmpUser INT, @MgrUser INT, @EmpLoc INT;
+        IF @EmployeeId IS NULL SELECT @EmployeeId = EmployeeId FROM dbo.Employees WHERE UserId = @ActorUserId;
         SELECT @EmpStatus = e.EmploymentStatus, @EmpUser = e.UserId, @MgrUser = m.UserId, @EmpLoc = e.LocationId
         FROM dbo.Employees e LEFT JOIN dbo.Employees m ON m.EmployeeId = e.ManagerEmployeeId WHERE e.EmployeeId = @EmployeeId;
         IF @EmpStatus IS NULL OR NOT EXISTS (SELECT 1 FROM dbo.fn_OperationalEmployees(@ActorUserId) WHERE EmployeeId = @EmployeeId)
@@ -275,6 +308,9 @@ BEGIN
                 OR (dbo.fn_HasPermission(@ActorUserId, N'Employees.Manage') = 1 AND dbo.fn_UserCanAccessLocation(@ActorUserId, @EmpLoc) = 1))
             THROW 50403, N'You can request access only for yourself or your direct reports.', 1;
         IF @EmpStatus <> N'Active' THROW 50422, N'Access cannot be requested for an inactive or exited employee.', 1;
+        IF @EmpUser <> @ActorUserId AND NOT (ISNULL(@MgrUser, -1) = @ActorUserId
+            OR dbo.fn_HasPermission(@ActorUserId, N'Employees.Manage') = 1)
+            THROW 50403, N'You can request access only for yourself or authorized direct reports.', 1;
 
         BEGIN TRAN;
         IF EXISTS (SELECT 1 FROM dbo.AccessRequests WITH (UPDLOCK, HOLDLOCK)
@@ -284,8 +320,10 @@ BEGIN
 
         DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_AccessRequestNumber;
         DECLARE @Number NVARCHAR(20) = CONCAT(N'EAW-', YEAR(SYSUTCDATETIME()), N'-', RIGHT(CONCAT(N'000000', @Seq), 6));
-        INSERT dbo.AccessRequests (RequestNumber, EmployeeId, LocationId, RequesterUserId, BusinessJustification, ValidFromUtc, ValidToUtc, Status)
-        VALUES (@Number, @EmployeeId, @LocationId, @ActorUserId, @BusinessJustification, @ValidFromUtc, @ValidToUtc, N'Draft');
+        INSERT dbo.AccessRequests (RequestNumber, EmployeeId, LocationId, RequesterUserId, BusinessJustification,
+            ValidFromUtc, ValidToUtc, Status, AccessType, BuildingLocationId, DurationCode)
+        VALUES (@Number, @EmployeeId, @LocationId, @ActorUserId, @BusinessJustification,
+            @EffectiveFrom, @EffectiveTo, N'Draft', @AccessType, @BuildingLocationId, @DurationCode);
         DECLARE @Id BIGINT = SCOPE_IDENTITY();
 
         DECLARE @After NVARCHAR(MAX) = (SELECT AccessRequestId, RequestNumber, EmployeeNumber, LocationName, ValidFromUtc, ValidToUtc, Status
@@ -293,8 +331,7 @@ BEGIN
         DECLARE @Summary NVARCHAR(500) = CONCAT(N'Access request ', @Number, N' created.');
         EXEC dbo.usp_Audit_Write @ActorUserId, N'AccessRequest.Created', N'AccessRequest', @Id, @Summary, NULL, @After, NULL, @CorrelationId, @IpAddress;
 
-        IF ISNULL(@Submit, 0) = 1
-            EXEC dbo.usp_Internal_SubmitAccessRequest @ActorUserId, @Id, @CorrelationId, @IpAddress;
+        EXEC dbo.usp_Internal_SubmitAccessRequest @ActorUserId, @Id, @CorrelationId, @IpAddress;
         COMMIT;
         EXEC dbo.usp_Internal_SelectAccessRequestDetail @ActorUserId, @Id;
     END TRY
@@ -322,10 +359,13 @@ GO
 CREATE OR ALTER PROCEDURE dbo.usp_AccessRequest_Update
     @ActorUserId           INT,
     @AccessRequestId       BIGINT,
+    @AccessType            NVARCHAR(20),
+    @BuildingLocationId    INT,
     @LocationId            INT,
+    @DurationCode          NVARCHAR(20),
     @BusinessJustification NVARCHAR(1000),
-    @ValidFromUtc          DATETIME2(3),
-    @ValidToUtc            DATETIME2(3),
+    @ValidFromUtc          DATETIME2(3) = NULL,
+    @ValidToUtc            DATETIME2(3) = NULL,
     @Version               BINARY(8),
     @CorrelationId         UNIQUEIDENTIFIER = NULL,
     @IpAddress             VARCHAR(45) = NULL
@@ -337,9 +377,30 @@ BEGIN
         SET @BusinessJustification = NULLIF(LTRIM(RTRIM(@BusinessJustification)), N'');
         IF @BusinessJustification IS NULL THROW 50400, N'A business justification is required.', 1;
         IF @Version IS NULL THROW 50400, N'Version is required.', 1;
-        EXEC dbo.usp_Internal_ValidateAccessWindow @ValidFromUtc, @ValidToUtc;
-        IF NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @LocationId AND IsActive = 1)
-            THROW 50400, N'The location does not exist or is inactive.', 1;
+        IF @AccessType NOT IN (N'Building', N'WingFloor') THROW 50400, N'Invalid accessType.', 1;
+        IF @DurationCode NOT IN (N'OneWeek',N'OneMonth',N'ThreeMonths',N'SixMonths',N'OneYear',N'Permanent',N'Custom')
+            THROW 50400, N'Invalid durationCode.', 1;
+        DECLARE @Now DATETIME2(3) = SYSUTCDATETIME(), @EffectiveFrom DATETIME2(3) = COALESCE(@ValidFromUtc, SYSUTCDATETIME()),
+                @EffectiveTo DATETIME2(3);
+        IF @EffectiveFrom < DATEADD(MINUTE, -5, @Now) THROW 50400, N'validFromUtc cannot be earlier than five minutes ago.', 1;
+        IF NOT EXISTS (SELECT 1 FROM dbo.Locations WHERE LocationId = @BuildingLocationId AND LocationType = N'Building' AND IsActive = 1)
+            THROW 50400, N'buildingLocationId must identify an active building.', 1;
+        IF @AccessType = N'Building' AND @LocationId <> @BuildingLocationId THROW 50400, N'For Building access, locationId must equal buildingLocationId.', 1;
+        IF @AccessType = N'WingFloor' AND (@LocationId = @BuildingLocationId OR NOT EXISTS
+            (SELECT 1 FROM dbo.fn_LocationDescendants(@BuildingLocationId) d JOIN dbo.Locations l ON l.LocationId = d.LocationId
+             WHERE d.LocationId = @LocationId AND l.LocationType IN (N'Floor',N'Wing',N'Zone') AND l.IsActive = 1))
+            THROW 50400, N'WingFloor location must be an active Floor, Wing or Zone within the selected building.', 1;
+        IF @DurationCode = N'Custom'
+        BEGIN
+            SET @EffectiveTo = @ValidToUtc;
+            IF @EffectiveTo IS NULL OR @EffectiveTo <= @EffectiveFrom OR @EffectiveTo > DATEADD(YEAR,1,@EffectiveFrom)
+                THROW 50400, N'Custom validToUtc must be after validFromUtc and no more than one year later.', 1;
+        END
+        ELSE
+            SET @EffectiveTo = CASE @DurationCode WHEN N'OneWeek' THEN DATEADD(DAY,7,@EffectiveFrom)
+                WHEN N'OneMonth' THEN DATEADD(MONTH,1,@EffectiveFrom) WHEN N'ThreeMonths' THEN DATEADD(MONTH,3,@EffectiveFrom)
+                WHEN N'SixMonths' THEN DATEADD(MONTH,6,@EffectiveFrom) WHEN N'OneYear' THEN DATEADD(YEAR,1,@EffectiveFrom)
+                ELSE DATEADD(YEAR,10,@EffectiveFrom) END;
         EXEC dbo.usp_Internal_AssertAccessRequestOwner @ActorUserId, @AccessRequestId;
 
         BEGIN TRAN;
@@ -353,8 +414,9 @@ BEGIN
 
         DECLARE @Before NVARCHAR(MAX) = (SELECT LocationName, BusinessJustification, ValidFromUtc, ValidToUtc FROM dbo.vw_AccessRequests
                                          WHERE AccessRequestId = @AccessRequestId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);
-        UPDATE dbo.AccessRequests SET LocationId = @LocationId, BusinessJustification = @BusinessJustification, ValidFromUtc = @ValidFromUtc,
-               ValidToUtc = @ValidToUtc, UpdatedAtUtc = SYSUTCDATETIME()
+        UPDATE dbo.AccessRequests SET AccessType = @AccessType, BuildingLocationId = @BuildingLocationId, LocationId = @LocationId,
+               DurationCode = @DurationCode, BusinessJustification = @BusinessJustification, ValidFromUtc = @EffectiveFrom,
+               ValidToUtc = @EffectiveTo, UpdatedAtUtc = SYSUTCDATETIME()
         WHERE AccessRequestId = @AccessRequestId AND Version = @Version;
         IF @@ROWCOUNT = 0 THROW 50409, N'The request was changed by someone else. Reload and try again.', 1;
         DECLARE @After NVARCHAR(MAX) = (SELECT LocationName, BusinessJustification, ValidFromUtc, ValidToUtc FROM dbo.vw_AccessRequests
@@ -452,12 +514,15 @@ GO
 CREATE OR ALTER PROCEDURE dbo.usp_Approval_Pending
     @ActorUserId INT,
     @Search      NVARCHAR(200) = NULL,
+    @Stage       NVARCHAR(20) = NULL,
     @Page        INT = 1,
     @PageSize    INT = 20
 AS
 BEGIN
     SET NOCOUNT ON;
     SET @Search = NULLIF(LTRIM(RTRIM(@Search)), N'');
+    IF @Stage IS NOT NULL AND @Stage NOT IN (N'Manager',N'SecurityHead',N'Security',N'AccessControl')
+        THROW 50400, N'Invalid approval stage.', 1;
     IF @Page < 1 SET @Page = 1;
     IF @PageSize < 1 SET @PageSize = 20;
     IF @PageSize > 100 SET @PageSize = 100;
@@ -469,11 +534,13 @@ BEGIN
     JOIN dbo.AccessRequestApprovals a ON a.AccessRequestId = ar.AccessRequestId AND a.Cycle = ar.Cycle AND a.Stage = ar.CurrentStage AND a.Decision = N'Pending'
     JOIN dbo.AccessRequestApprovalAssignees x ON x.ApprovalId = a.ApprovalId AND x.UserId = @ActorUserId
     WHERE ar.Status = N'PendingApproval';
+    DELETE #f WHERE @Stage IS NOT NULL AND Stage <> @Stage;
 
     SELECT COUNT(*) AS TotalCount FROM #f f JOIN dbo.vw_AccessRequests v ON v.AccessRequestId = f.AccessRequestId
     WHERE (@Search IS NULL OR v.RequestNumber LIKE N'%' + @Search + N'%' OR v.EmployeeName LIKE N'%' + @Search + N'%');
 
-    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeName, v.EmployeeNumber, v.LocationName, v.IsRestricted, f.Stage,
+    SELECT v.AccessRequestId, v.RequestNumber, v.EmployeeName, v.EmployeeNumber, v.AccessType, v.BuildingLocationName,
+           v.LocationName, v.IsRestricted, v.DurationCode, f.Stage,
            v.BusinessJustification, v.ValidFromUtc, v.ValidToUtc, v.SubmittedAtUtc,
            CAST(DATEDIFF(MINUTE, ISNULL(f.AssignedAtUtc, v.SubmittedAtUtc), SYSUTCDATETIME()) / 60.0 AS DECIMAL(10, 1)) AS AgeHours,
            v.Version
@@ -505,9 +572,9 @@ BEGIN
             THROW 50404, N'Access request not found.', 1;
 
         BEGIN TRAN;
-        DECLARE @Status NVARCHAR(20), @Ver BINARY(8), @Stage NVARCHAR(20), @Cycle INT, @Number NVARCHAR(20), @Requester INT, @EmpUser INT, @LocId INT;
+        DECLARE @Status NVARCHAR(20), @Ver BINARY(8), @Stage NVARCHAR(20), @Cycle INT, @Number NVARCHAR(20), @Requester INT, @EmpUser INT, @LocId INT, @AccessType NVARCHAR(20);
         SELECT @Status = ar.Status, @Ver = ar.Version, @Stage = ar.CurrentStage, @Cycle = ar.Cycle, @Number = ar.RequestNumber,
-               @Requester = ar.RequesterUserId, @EmpUser = e.UserId, @LocId = ar.LocationId
+               @Requester = ar.RequesterUserId, @EmpUser = e.UserId, @LocId = ar.LocationId, @AccessType = ar.AccessType
         FROM dbo.AccessRequests ar WITH (UPDLOCK) JOIN dbo.Employees e ON e.EmployeeId = ar.EmployeeId
         WHERE ar.AccessRequestId = @AccessRequestId;
         IF @Status <> N'PendingApproval' THROW 50409, N'The request is not pending approval.', 1;
@@ -527,7 +594,9 @@ BEGIN
         UPDATE dbo.AccessRequestApprovals SET Decision = @RowDecision, DecidedByUserId = @ActorUserId, Comments = @Comments, DecidedAtUtc = SYSUTCDATETIME()
         WHERE ApprovalId = @ApprovalId;
 
-        DECLARE @NextStage NVARCHAR(20) = CASE WHEN @Decision = N'Approve' THEN CASE @Stage WHEN N'Manager' THEN N'Security' WHEN N'Security' THEN N'FacilityAdmin' END END;
+        DECLARE @NextStage NVARCHAR(20) = CASE WHEN @Decision = N'Approve' THEN
+            CASE WHEN @Stage = N'Manager' THEN CASE @AccessType WHEN N'WingFloor' THEN N'Security' ELSE N'SecurityHead' END
+                 WHEN @Stage IN (N'Security', N'SecurityHead') THEN N'AccessControl' END END;
         DECLARE @NewStatus NVARCHAR(20), @Summary NVARCHAR(500), @Route NVARCHAR(200) = CONCAT(N'/access-requests/', @AccessRequestId);
         IF @Decision = N'Approve' AND @NextStage IS NOT NULL
         BEGIN
@@ -542,7 +611,7 @@ BEGIN
             UPDATE dbo.AccessRequests SET Status = N'Approved', CurrentStage = NULL, DecidedAtUtc = SYSUTCDATETIME(), UpdatedAtUtc = SYSUTCDATETIME()
             WHERE AccessRequestId = @AccessRequestId;
             SET @Summary = CONCAT(N'Access request ', @Number, N' fully approved; ready for provisioning.');
-            EXEC dbo.usp_Notification_CreateForRole N'FacilityAdmin', @LocId, N'ProvisioningRequired', N'Access ready to provision', @Summary,
+            EXEC dbo.usp_Notification_CreateForRole N'AccessControlTeam', @LocId, N'ProvisioningRequired', N'Access ready to provision', @Summary,
                  N'AccessRequest', @AccessRequestId, @Route, @ActorUserId;
         END
         ELSE
@@ -723,5 +792,75 @@ BEGIN
         IF @@TRANCOUNT > 0 ROLLBACK;
         THROW;
     END CATCH
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Approval_TeamSearch
+    @ActorUserId INT,
+    @RequestKind NVARCHAR(20) = NULL,
+    @Status NVARCHAR(20) = NULL,
+    @Search NVARCHAR(200) = NULL,
+    @Page INT = 1,
+    @PageSize INT = 20
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF dbo.fn_HasPermission(@ActorUserId,N'Approvals.Team')=0
+        THROW 50403,N'Team approval permission is required.',1;
+    IF @RequestKind IS NOT NULL AND @RequestKind NOT IN (N'Card',N'Access')
+        THROW 50400,N'requestKind must be Card or Access.',1;
+    IF @Page<1 SET @Page=1;
+    IF @PageSize<1 SET @PageSize=20;
+    IF @PageSize>100 SET @PageSize=100;
+    SET @Search=NULLIF(LTRIM(RTRIM(@Search)),N'');
+    DECLARE @ActorEmployeeId INT=ISNULL((SELECT EmployeeId FROM dbo.Employees WHERE UserId=@ActorUserId),-1);
+    CREATE TABLE #TeamRequests
+    (
+        RequestKind NVARCHAR(20) NOT NULL,
+        RequestId BIGINT NOT NULL,
+        RequestNumber NVARCHAR(30) NOT NULL,
+        RequestType NVARCHAR(30) NOT NULL,
+        EmployeeId INT NOT NULL,
+        EmployeeName NVARCHAR(201) NOT NULL,
+        EmployeeNumber NVARCHAR(30) NOT NULL,
+        Status NVARCHAR(30) NOT NULL,
+        CurrentStage NVARCHAR(30) NULL,
+        SubmittedAtUtc DATETIME2(3) NULL,
+        Route NVARCHAR(200) NOT NULL
+    );
+    INSERT #TeamRequests
+    SELECT N'Card',cr.CardRequestId,cr.RequestNumber,cr.RequestType,e.EmployeeId,
+           CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,cr.Status,
+           CASE cr.Status WHEN N'PendingManager' THEN N'Manager' WHEN N'PendingHR' THEN N'HR'
+                WHEN N'PendingSecurity' THEN N'Security' WHEN N'PendingIdCardTeam' THEN N'IdCardTeam'
+                WHEN N'Printing' THEN N'IdCardTeam' WHEN N'ReadyToIssue' THEN N'IdCardTeam' END,
+           cr.RequestedAtUtc,CONCAT(N'/cards/requests/',cr.CardRequestId)
+    FROM dbo.CardRequests cr
+    JOIN dbo.Employees e ON e.EmployeeId=cr.EmployeeId
+    WHERE e.ManagerEmployeeId=@ActorEmployeeId
+      AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1
+      AND (@RequestKind IS NULL OR @RequestKind=N'Card');
+    INSERT #TeamRequests
+    SELECT N'Access',ar.AccessRequestId,ar.RequestNumber,ar.AccessType,e.EmployeeId,
+           CONCAT(e.FirstName,N' ',e.LastName),e.EmployeeNumber,ar.Status,ar.CurrentStage,
+           ar.SubmittedAtUtc,CONCAT(N'/access-requests/',ar.AccessRequestId)
+    FROM dbo.AccessRequests ar
+    JOIN dbo.Employees e ON e.EmployeeId=ar.EmployeeId
+    WHERE e.ManagerEmployeeId=@ActorEmployeeId
+      AND dbo.fn_UserCanAccessLocation(@ActorUserId,e.LocationId)=1
+      AND (@RequestKind IS NULL OR @RequestKind=N'Access');
+    SELECT COUNT(*) AS TotalCount
+    FROM #TeamRequests t
+    WHERE (@Status IS NULL OR t.Status=@Status)
+      AND (@Search IS NULL OR t.RequestNumber LIKE N'%'+@Search+N'%'
+           OR t.EmployeeName LIKE N'%'+@Search+N'%' OR t.EmployeeNumber LIKE N'%'+@Search+N'%');
+    SELECT t.RequestKind,t.RequestId,t.RequestNumber,t.RequestType,t.EmployeeId,t.EmployeeName,t.EmployeeNumber,
+           t.Status,t.CurrentStage,t.SubmittedAtUtc,t.Route
+    FROM #TeamRequests t
+    WHERE (@Status IS NULL OR t.Status=@Status)
+      AND (@Search IS NULL OR t.RequestNumber LIKE N'%'+@Search+N'%'
+           OR t.EmployeeName LIKE N'%'+@Search+N'%' OR t.EmployeeNumber LIKE N'%'+@Search+N'%')
+    ORDER BY t.SubmittedAtUtc DESC,t.RequestId DESC
+    OFFSET (@Page-1)*@PageSize ROWS FETCH NEXT @PageSize ROWS ONLY;
 END
 GO

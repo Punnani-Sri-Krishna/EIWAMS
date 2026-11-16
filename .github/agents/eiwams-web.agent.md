@@ -18,13 +18,18 @@ Do not edit: `EIWAMS.API\`, `EIWAMS.Application\`, `EIWAMS.Domain\`, `EIWAMS.Inf
 * Angular 22 (standalone components, signals, new control flow), Angular Material, Bootstrap 5 grid/utilities, SCSS,
   Chart.js (ng2-charts) for dashboards, `@azure/msal-angular` for Entra ID. npm only; Node 24.
 * Never build: email, SMTP, mail templates, reminder engine, escalation engine, storage accounts, blob storage, Azure
-  Storage queues, file uploads, microservices, event bus, service bus, Redis, background jobs, Hangfire, SignalR
-  (notifications are polled from `v1/notifications/unread-count`).
+  Storage queues, file upload management, microservices, event bus, service bus, Redis, background jobs, Hangfire,
+  SignalR, AI/agent/chatbot features (notifications are polled from `v1/notifications/unread-count`).
+* **Allowed exception - employee photo:** a plain file input (no camera) on My Profile and in the ID card request
+  stepper; crop to a square and resize client-side to at most 600x600 JPEG (canvas, quality 0.85), check <= 1 MB,
+  preview, then send base64 JSON `{ photoContentType, photoBase64 }` (contract §5.5). Show photos via `data:` URLs
+  built from the photo endpoints.
 
 ## UI rules
 
 * **Top navigation only** - no side nav. App bar gradient `linear-gradient(90deg,#0B3C5D,#0E6E83 60%,#0FA3B1)`;
-  sections Dashboard, People, Access, Security, Visitors, Insights, Admin rendered from `GET v1/me/menu`
+  sections Home, My Profile, Requests, Approvals, Notifications, Directory, Security, Insights, Admin rendered from
+  `GET v1/me/menu`
   (dropdowns per section); below `lg` a hamburger opens a panel that drops down from the top.
 * **Lab Spectrum** palette: primary `#0B3C5D`, teal `#0FA3B1`, cyan `#3DDCF2`, violet `#5B5BD6`, success `#1B998B`,
   warning `#F2A541`, danger `#D7263D`, surface `#F4F8FB`, ink `#10212E`; font Inter/Roboto. Define once as SCSS/CSS
@@ -38,9 +43,12 @@ Do not edit: `EIWAMS.API\`, `EIWAMS.Application\`, `EIWAMS.Domain\`, `EIWAMS.Inf
   (route `data.permissions`, any-of), interceptors (base URL, `X-User-Id` in DevHeader, bearer token in EntraId,
   `X-Correlation-Id`, error -> snackbar/redirect on 401/403), envelope-unwrapping API service, menu/permission store.
 * `src/app/shared`: page header, data table, status chip, confirm dialog, empty/error states, masked-UID pipe.
-* `src/app/features/<area>`: lazy-loaded routes matching the contract menu routes (e.g. `/employees`, `/cards`,
-  `/access-requests`, `/approvals`, `/permissions`, `/rfid-monitor`, `/violations`, `/incidents`, `/blacklist`,
-    `/visitors`, `/reports`, `/audit`, `/admin/...`). Deep links must work (IIS/App Service SPA fallback).
+* `src/app/features/<area>`: lazy-loaded routes exactly as in contract §7 "Pages and routes (v2)" (`/dashboard` home,
+  `/profile`, `/cards/requests/new`, `/cards/requests/:id`, `/access-requests/new`, `/access-requests/:id`,
+  `/my-requests`, `/approvals/{manager,team,hr,id-card,security,access}`, `/permissions/provision`, `/notifications`,
+  read-only `/employees`, plus existing `/cards`, `/permissions`, security, reports, audit and `/admin/...`). Employee
+  create/edit UI is removed. Request detail pages render a stage stepper, history timeline and actions driven only by
+  `availableActions` / `can*` flags. Deep links must work (IIS/App Service SPA fallback).
 
 ## Deployment requirements (checked by CI / deploy-web.yml)
 

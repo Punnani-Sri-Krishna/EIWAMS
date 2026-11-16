@@ -44,7 +44,7 @@ BEGIN
 
     SELECT v.EmployeeId, v.EmployeeNumber, v.FirstName, v.LastName, v.FullName, v.WorkEmail, v.EmployeeType, v.DepartmentId,
            v.DepartmentName, v.ManagerEmployeeId, v.ManagerName, v.LocationId, v.LocationName, v.EmploymentStatus, v.JoinDate,
-           v.EndDate, v.ActiveCardCount
+           v.EndDate, v.ActiveCardCount, v.Designation, v.HasPhoto
     FROM dbo.vw_Employees v
     JOIN #f f ON f.EmployeeId = v.EmployeeId
     ORDER BY
@@ -124,6 +124,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_Employee_Create
     @JoinDate          DATE,
     @EndDate           DATE = NULL,
     @UserId            INT = NULL,
+    @Designation       NVARCHAR(100) = NULL,
     @CorrelationId     UNIQUEIDENTIFIER = NULL,
     @IpAddress         VARCHAR(45) = NULL
 AS
@@ -152,9 +153,9 @@ BEGIN
         END
 
         INSERT dbo.Employees (EmployeeNumber, FirstName, LastName, WorkEmail, EmployeeType, DepartmentId, ManagerEmployeeId, LocationId,
-                              EmploymentStatus, JoinDate, EndDate, UserId, CreatedByUserId)
+                              EmploymentStatus, JoinDate, EndDate, UserId, CreatedByUserId, Designation)
         VALUES (@EmployeeNumber, LTRIM(RTRIM(@FirstName)), LTRIM(RTRIM(@LastName)), LTRIM(RTRIM(@WorkEmail)), @EmployeeType, @DepartmentId,
-                @ManagerEmployeeId, @LocationId, N'Active', @JoinDate, @EndDate, @UserId, @ActorUserId);
+                @ManagerEmployeeId, @LocationId, N'Active', @JoinDate, @EndDate, @UserId, @ActorUserId, NULLIF(LTRIM(RTRIM(@Designation)), N''));
         DECLARE @Id INT = SCOPE_IDENTITY();
 
         DECLARE @After NVARCHAR(MAX) = (SELECT EmployeeId, EmployeeNumber, FullName, WorkEmail, EmployeeType, DepartmentName, ManagerName,
@@ -192,6 +193,7 @@ CREATE OR ALTER PROCEDURE dbo.usp_Employee_Update
     @JoinDate          DATE,
     @EndDate           DATE = NULL,
     @UserId            INT = NULL,
+    @Designation       NVARCHAR(100) = NULL,
     @Version           BINARY(8),
     @CorrelationId     UNIQUEIDENTIFIER = NULL,
     @IpAddress         VARCHAR(45) = NULL
@@ -224,7 +226,7 @@ BEGIN
         UPDATE dbo.Employees
         SET FirstName = LTRIM(RTRIM(@FirstName)), LastName = LTRIM(RTRIM(@LastName)), WorkEmail = LTRIM(RTRIM(@WorkEmail)),
             EmployeeType = @EmployeeType, DepartmentId = @DepartmentId, ManagerEmployeeId = @ManagerEmployeeId, LocationId = @LocationId,
-            JoinDate = @JoinDate, EndDate = @EndDate, UserId = @UserId, UpdatedAtUtc = SYSUTCDATETIME(), UpdatedByUserId = @ActorUserId
+            JoinDate = @JoinDate, EndDate = @EndDate, UserId = @UserId, Designation = NULLIF(LTRIM(RTRIM(@Designation)), N''), UpdatedAtUtc = SYSUTCDATETIME(), UpdatedByUserId = @ActorUserId
         WHERE EmployeeId = @EmployeeId AND Version = @Version;
         IF @@ROWCOUNT = 0 THROW 50409, N'The employee was changed by someone else. Reload and try again.', 1;
 
@@ -382,8 +384,17 @@ BEGIN
         UPDATE a SET Decision = N'Skipped'
         FROM dbo.AccessRequestApprovals a JOIN dbo.AccessRequests ar ON ar.AccessRequestId = a.AccessRequestId
         WHERE ar.EmployeeId = @EmployeeId AND a.Decision = N'Pending' AND ar.Status = N'Cancelled';
-        UPDATE dbo.CardRequests SET Status = N'Cancelled', DecidedAtUtc = SYSUTCDATETIME(), DecisionComments = N'Employee deactivated'
-        WHERE EmployeeId = @EmployeeId AND Status IN (N'Submitted', N'VerificationPending', N'Approved');
+        DECLARE @CancelledCardRequests TABLE (CardRequestId BIGINT, FromStatus NVARCHAR(30), ToStatus NVARCHAR(30));
+        UPDATE dbo.CardRequests
+        SET Status=N'Cancelled',DecidedAtUtc=SYSUTCDATETIME(),DecisionComments=N'Employee deactivated'
+        OUTPUT inserted.CardRequestId,deleted.Status,inserted.Status INTO @CancelledCardRequests
+        WHERE EmployeeId=@EmployeeId
+          AND Status IN (N'PendingManager',N'PendingHR',N'PendingSecurity',N'PendingIdCardTeam',N'Printing',N'ReadyToIssue');
+        INSERT dbo.CardRequestHistory(CardRequestId,FromStatus,ToStatus,Action,Comments,ActorUserId)
+        SELECT CardRequestId,FromStatus,ToStatus,N'Cancel',N'Employee deactivated',@ActorUserId
+        FROM @CancelledCardRequests;
+        UPDATE dbo.Users SET IsActive=0,UpdatedAtUtc=SYSUTCDATETIME()
+        WHERE UserId=(SELECT UserId FROM dbo.Employees WHERE EmployeeId=@EmployeeId);
 
         -- Controller sync for every revoked credential.
         DECLARE @sync NVARCHAR(20), @cid BIGINT, @pid BIGINT, @plid INT;
@@ -458,5 +469,160 @@ BEGIN
     LEFT JOIN dbo.Users u ON u.UserId = h.ChangedByUserId
     WHERE h.EmployeeId = @EmployeeId
     ORDER BY h.ChangedAtUtc DESC, h.HistoryId DESC;
+END
+GO
+
+CREATE OR ALTER PROCEDURE dbo.usp_Employee_Sync
+    @ActorUserId INT,
+    @EmployeesJson NVARCHAR(MAX),
+    @CorrelationId UNIQUEIDENTIFIER = NULL,
+    @IpAddress VARCHAR(45) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF dbo.fn_HasPermission(@ActorUserId,N'Employees.Sync')=0
+        THROW 50403,N'Employee sync permission is required.',1;
+    IF ISJSON(@EmployeesJson)<>1 THROW 50400,N'employees must be a valid JSON array.',1;
+
+    CREATE TABLE #Input
+    (
+        RowNumber INT NOT NULL,
+        EmployeeNumber NVARCHAR(30) NOT NULL,
+        FirstName NVARCHAR(100) NOT NULL,
+        LastName NVARCHAR(100) NOT NULL,
+        WorkEmail NVARCHAR(256) NOT NULL,
+        Designation NVARCHAR(100) NULL,
+        DepartmentCode NVARCHAR(20) NOT NULL,
+        ManagerEmployeeNumber NVARCHAR(30) NULL,
+        LocationCode NVARCHAR(30) NOT NULL,
+        EmployeeType NVARCHAR(20) NOT NULL,
+        EmploymentStatus NVARCHAR(20) NOT NULL,
+        JoinDate DATE NOT NULL,
+        EndDate DATE NULL
+    );
+    INSERT #Input
+    SELECT TRY_CONVERT(INT,[key])+1,
+           JSON_VALUE(value,'$.employeeNumber'),JSON_VALUE(value,'$.firstName'),JSON_VALUE(value,'$.lastName'),
+           JSON_VALUE(value,'$.workEmail'),JSON_VALUE(value,'$.designation'),JSON_VALUE(value,'$.departmentCode'),
+           JSON_VALUE(value,'$.managerEmployeeNumber'),JSON_VALUE(value,'$.locationCode'),JSON_VALUE(value,'$.employeeType'),
+           JSON_VALUE(value,'$.employmentStatus'),TRY_CONVERT(DATE,JSON_VALUE(value,'$.joinDate')),
+           TRY_CONVERT(DATE,JSON_VALUE(value,'$.endDate'))
+    FROM OPENJSON(@EmployeesJson);
+    IF (SELECT COUNT(*) FROM #Input) NOT BETWEEN 1 AND 500
+        THROW 50400,N'employees must contain between 1 and 500 rows.',1;
+    IF EXISTS (SELECT EmployeeNumber FROM #Input GROUP BY EmployeeNumber HAVING COUNT(*)>1)
+        THROW 50400,N'employees contains duplicate employeeNumber values.',1;
+
+    DECLARE @BadRows NVARCHAR(1000);
+    SELECT @BadRows=STRING_AGG(CONVERT(NVARCHAR(10),i.RowNumber),N',')
+    FROM #Input i LEFT JOIN dbo.Departments d ON d.DepartmentCode=i.DepartmentCode
+    WHERE d.DepartmentId IS NULL;
+    IF @BadRows IS NOT NULL
+    BEGIN
+        DECLARE @DeptError NVARCHAR(2048)=CONCAT(N'Unknown departmentCode at row(s): ',@BadRows);
+        THROW 50400,@DeptError,1;
+    END
+    SET @BadRows=NULL;
+    SELECT @BadRows=STRING_AGG(CONVERT(NVARCHAR(10),i.RowNumber),N',')
+    FROM #Input i LEFT JOIN dbo.Locations l ON l.LocationCode=i.LocationCode
+    WHERE l.LocationId IS NULL;
+    IF @BadRows IS NOT NULL
+    BEGIN
+        DECLARE @LocationError NVARCHAR(2048)=CONCAT(N'Unknown locationCode at row(s): ',@BadRows);
+        THROW 50400,@LocationError,1;
+    END
+    SET @BadRows=NULL;
+    SELECT @BadRows=STRING_AGG(CONVERT(NVARCHAR(10),i.RowNumber),N',')
+    FROM #Input i
+    WHERE i.ManagerEmployeeNumber IS NOT NULL
+      AND i.ManagerEmployeeNumber=i.EmployeeNumber;
+    IF @BadRows IS NOT NULL
+    BEGIN
+        DECLARE @SelfManagerError NVARCHAR(2048)=CONCAT(N'Employee cannot manage itself at row(s): ',@BadRows);
+        THROW 50400,@SelfManagerError,1;
+    END
+
+    CREATE TABLE #WasActive(EmployeeNumber NVARCHAR(30) PRIMARY KEY);
+    INSERT #WasActive SELECT e.EmployeeNumber
+    FROM dbo.Employees e JOIN #Input i ON i.EmployeeNumber=e.EmployeeNumber
+    WHERE e.EmploymentStatus=N'Active' AND i.EmploymentStatus IN (N'Exited',N'Inactive');
+
+    BEGIN TRY
+        BEGIN TRAN;
+        DECLARE @Inserted INT=0,@Updated INT=0,@Deactivated INT=0;
+        INSERT dbo.Employees
+            (EmployeeNumber,FirstName,LastName,WorkEmail,Designation,EmployeeType,DepartmentId,ManagerEmployeeId,LocationId,
+             EmploymentStatus,JoinDate,EndDate,CreatedByUserId)
+        SELECT i.EmployeeNumber,i.FirstName,i.LastName,i.WorkEmail,i.Designation,i.EmployeeType,d.DepartmentId,NULL,l.LocationId,
+               i.EmploymentStatus,i.JoinDate,i.EndDate,@ActorUserId
+        FROM #Input i
+        JOIN dbo.Departments d ON d.DepartmentCode=i.DepartmentCode
+        JOIN dbo.Locations l ON l.LocationCode=i.LocationCode
+        WHERE NOT EXISTS (SELECT 1 FROM dbo.Employees e WHERE e.EmployeeNumber=i.EmployeeNumber);
+        SET @Inserted=@@ROWCOUNT;
+
+        UPDATE e
+        SET FirstName=i.FirstName,LastName=i.LastName,WorkEmail=i.WorkEmail,Designation=i.Designation,
+            EmployeeType=i.EmployeeType,DepartmentId=d.DepartmentId,LocationId=l.LocationId,
+            EmploymentStatus=CASE WHEN w.EmployeeNumber IS NOT NULL THEN N'Active' ELSE i.EmploymentStatus END,
+            JoinDate=i.JoinDate,EndDate=CASE WHEN w.EmployeeNumber IS NOT NULL THEN e.EndDate ELSE i.EndDate END,
+            UpdatedAtUtc=SYSUTCDATETIME(),UpdatedByUserId=@ActorUserId
+        FROM dbo.Employees e
+        JOIN #Input i ON i.EmployeeNumber=e.EmployeeNumber
+        JOIN dbo.Departments d ON d.DepartmentCode=i.DepartmentCode
+        JOIN dbo.Locations l ON l.LocationCode=i.LocationCode
+        LEFT JOIN #WasActive w ON w.EmployeeNumber=i.EmployeeNumber;
+        SET @Updated=@@ROWCOUNT;
+
+        SET @BadRows=NULL;
+        SELECT @BadRows=STRING_AGG(CONVERT(NVARCHAR(10),i.RowNumber),N',')
+        FROM #Input i
+        WHERE i.ManagerEmployeeNumber IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM dbo.Employees m WHERE m.EmployeeNumber=i.ManagerEmployeeNumber);
+        IF @BadRows IS NOT NULL
+        BEGIN
+            DECLARE @ManagerError NVARCHAR(2048)=CONCAT(N'Unknown managerEmployeeNumber at row(s): ',@BadRows);
+            THROW 50400,@ManagerError,1;
+        END
+
+        UPDATE e SET ManagerEmployeeId=m.EmployeeId,UpdatedAtUtc=SYSUTCDATETIME(),UpdatedByUserId=@ActorUserId
+        FROM dbo.Employees e
+        JOIN #Input i ON i.EmployeeNumber=e.EmployeeNumber
+        LEFT JOIN dbo.Employees m ON m.EmployeeNumber=i.ManagerEmployeeNumber
+        WHERE ISNULL(e.ManagerEmployeeId,-1)<>ISNULL(m.EmployeeId,-1);
+
+        DECLARE @EmployeeId INT,@Number NVARCHAR(30),@Status NVARCHAR(20),@EndDate DATE,@JoinDate DATE;
+        DECLARE deact CURSOR LOCAL FAST_FORWARD FOR
+            SELECT e.EmployeeId,e.EmployeeNumber,i.EmploymentStatus,COALESCE(i.EndDate,CONVERT(DATE,SYSUTCDATETIME())),i.JoinDate
+            FROM dbo.Employees e JOIN #Input i ON i.EmployeeNumber=e.EmployeeNumber
+            JOIN #WasActive w ON w.EmployeeNumber=i.EmployeeNumber;
+        OPEN deact;
+        FETCH NEXT FROM deact INTO @EmployeeId,@Number,@Status,@EndDate,@JoinDate;
+        WHILE @@FETCH_STATUS=0
+        BEGIN
+            IF @EndDate<@JoinDate SET @EndDate=@JoinDate;
+            EXEC dbo.usp_Employee_Deactivate @ActorUserId,@EmployeeId,@Status,@EndDate,N'Employment status synchronized from HR.',@CorrelationId,@IpAddress;
+            UPDATE u SET IsActive=0,UpdatedAtUtc=SYSUTCDATETIME()
+            FROM dbo.Users u JOIN dbo.Employees e ON e.UserId=u.UserId WHERE e.EmployeeId=@EmployeeId;
+            SET @Deactivated+=1;
+            FETCH NEXT FROM deact INTO @EmployeeId,@Number,@Status,@EndDate,@JoinDate;
+        END
+        CLOSE deact;
+        DEALLOCATE deact;
+
+        EXEC dbo.usp_Internal_GrantAutoRoles NULL;
+        DECLARE @Summary NVARCHAR(500)=CONCAT(N'Employee sync completed: ',@Inserted,N' inserted, ',@Updated,N' updated, ',@Deactivated,N' deactivated.');
+        DECLARE @AfterJson NVARCHAR(MAX)=(SELECT @Inserted AS inserted,@Updated AS updated,@Deactivated AS deactivated FOR JSON PATH,WITHOUT_ARRAY_WRAPPER);
+        EXEC dbo.usp_Audit_Write @ActorUserId,N'Employee.Sync',N'EmployeeBatch',N'HR',@Summary,NULL,@AfterJson,NULL,@CorrelationId,@IpAddress;
+        COMMIT;
+        SELECT @Inserted AS Inserted,@Updated AS Updated,@Deactivated AS Deactivated;
+    END TRY
+    BEGIN CATCH
+        IF CURSOR_STATUS('local','deact')>=0 CLOSE deact;
+        IF CURSOR_STATUS('local','deact')>-3 DEALLOCATE deact;
+        IF @@TRANCOUNT>0 ROLLBACK;
+        THROW;
+    END CATCH
 END
 GO

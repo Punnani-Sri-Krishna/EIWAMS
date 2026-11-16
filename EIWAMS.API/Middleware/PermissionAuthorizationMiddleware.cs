@@ -27,6 +27,8 @@ public sealed class PermissionAuthorizationMiddleware(RateLimiter rateLimiter) :
         ["DeactivateEmployee"] = [P.EmployeesDeactivate],
         ["GetEmployeeCards"] = [P.CardsView, P.CardsViewAll],
         ["GetEmployeeHistory"] = [P.EmployeesView, P.EmployeesViewAll],
+        ["Employees_GetPhoto"] = [P.CardsProcess, P.CardsHrVerify, P.CardsSecurityReview, P.CardsManagerApprove, P.EmployeesViewAll],
+        ["Employees_Sync"] = [P.EmployeesSync],
 
         // Cards
         ["SearchCards"] = [P.CardsView, P.CardsViewAll],
@@ -38,7 +40,9 @@ public sealed class PermissionAuthorizationMiddleware(RateLimiter rateLimiter) :
         ["DeactivateCard"] = [P.CardsBlock],
         ["SearchCardRequests"] = [P.CardsView, P.CardsViewAll],
         ["CreateCardRequest"] = [P.CardsRequest],
-        ["DecideCardRequest"] = [P.CardsVerify],
+        ["CardRequests_Queue"] = [P.CardsManagerApprove, P.CardsHrVerify, P.CardsSecurityReview, P.CardsProcess],
+        ["CardRequests_Get"] = [P.CardsView, P.CardsViewAll, P.CardsManagerApprove, P.CardsHrVerify, P.CardsSecurityReview, P.CardsProcess, P.ApprovalsTeam],
+        ["CardRequests_Decide"] = [P.CardsRequest, P.CardsManagerApprove, P.CardsHrVerify, P.CardsSecurityReview, P.CardsProcess],
 
         // Access requests, approvals, permissions
         ["SearchAccessRequests"] = [P.AccessRequestsView, P.AccessRequestsViewAll],
@@ -48,6 +52,7 @@ public sealed class PermissionAuthorizationMiddleware(RateLimiter rateLimiter) :
         ["SubmitAccessRequest"] = [P.AccessRequestsCreate],
         ["CancelAccessRequest"] = [P.AccessRequestsCreate],
         ["GetPendingApprovals"] = [P.ApprovalsDecide],
+        ["Approvals_Team"] = [P.ApprovalsTeam],
         ["DecideApproval"] = [P.ApprovalsDecide],
         ["SearchPermissions"] = [P.PermissionsView],
         ["ProvisionPermission"] = [P.PermissionsProvision],
@@ -78,6 +83,7 @@ public sealed class PermissionAuthorizationMiddleware(RateLimiter rateLimiter) :
 
         // Dashboard, reports, audit
         ["GetDashboardSummary"] = [P.DashboardView],
+        ["Dashboard_Home"] = [P.DashboardView],
         ["GetDashboardEventsTrend"] = [P.DashboardView],
         ["GetDashboardRequestsByStatus"] = [P.DashboardView],
         ["GetDashboardViolationsByType"] = [P.DashboardView],

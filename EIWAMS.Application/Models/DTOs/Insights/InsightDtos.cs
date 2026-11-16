@@ -31,6 +31,54 @@ public sealed class DashboardSummaryDto
     public decimal? AvgApprovalTurnaroundHours { get; set; }
 }
 
+public sealed class HomeDashboardDto
+{
+    public MyRequestsSummary MyRequests { get; set; } = new();
+    public QueueSummaryDto? PendingManager { get; set; }
+    public QueueSummaryDto? PendingHr { get; set; }
+    public QueueSummaryDto? PendingSecurity { get; set; }
+    public QueueSummaryDto? PendingIdCard { get; set; }
+    public QueueSummaryDto? PendingAccessReview { get; set; }
+    public QueueSummaryDto? PendingProvisioning { get; set; }
+    public QueueSummaryDto? TeamRequests { get; set; }
+    public HomeReportsSummary? Reports { get; set; }
+}
+
+public sealed class MyRequestsSummary
+{
+    public int Open { get; set; }
+    public int Closed { get; set; }
+    public IReadOnlyList<HomeWorkItemDto> Recent { get; set; } = [];
+}
+
+public sealed class QueueSummaryDto
+{
+    public int Count { get; set; }
+    public string Route { get; set; } = string.Empty;
+    public IReadOnlyList<HomeWorkItemDto> Top { get; set; } = [];
+}
+
+public sealed class HomeReportsSummary
+{
+    public int CardsIssuedThisMonth { get; set; }
+    public int AccessGrantedThisMonth { get; set; }
+    public int OpenRequests { get; set; }
+}
+
+public sealed class HomeWorkItemDto
+{
+    public string RequestKind { get; set; } = string.Empty;
+    public long RequestId { get; set; }
+    public string RequestNumber { get; set; } = string.Empty;
+    public string RequestType { get; set; } = string.Empty;
+    public string EmployeeName { get; set; } = string.Empty;
+    public string EmployeeNumber { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? CurrentStage { get; set; }
+    public DateTime? SubmittedAtUtc { get; set; }
+    public string Route { get; set; } = string.Empty;
+}
+
 public sealed class EventsTrendDto
 {
     public DateOnly Date { get; set; }

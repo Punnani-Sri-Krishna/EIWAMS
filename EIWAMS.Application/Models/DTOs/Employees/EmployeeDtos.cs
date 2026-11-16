@@ -13,6 +13,34 @@ public sealed class EmployeeQuery : PagedQuery
     public string? EmployeeType { get; set; }
 }
 
+public sealed class EmployeeSyncRequest
+{
+    public IReadOnlyList<EmployeeSyncItem> Employees { get; set; } = [];
+}
+
+public sealed class EmployeeSyncItem
+{
+    public string EmployeeNumber { get; set; } = string.Empty;
+    public string FirstName { get; set; } = string.Empty;
+    public string LastName { get; set; } = string.Empty;
+    public string WorkEmail { get; set; } = string.Empty;
+    public string? Designation { get; set; }
+    public string DepartmentCode { get; set; } = string.Empty;
+    public string? ManagerEmployeeNumber { get; set; }
+    public string LocationCode { get; set; } = string.Empty;
+    public string EmployeeType { get; set; } = string.Empty;
+    public string EmploymentStatus { get; set; } = "Active";
+    public DateOnly JoinDate { get; set; }
+    public DateOnly? EndDate { get; set; }
+}
+
+public sealed class EmployeeSyncResultDto
+{
+    public int Inserted { get; set; }
+    public int Updated { get; set; }
+    public int Deactivated { get; set; }
+}
+
 public class EmployeeListItemDto
 {
     public int EmployeeId { get; set; }

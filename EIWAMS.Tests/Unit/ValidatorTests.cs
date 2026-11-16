@@ -51,13 +51,52 @@ public class ValidatorTests
         var request = new CreateAccessRequestRequest
         {
             EmployeeId = 6,
+            AccessType = "WingFloor",
+            BuildingLocationId = 2,
             LocationId = 10,
-            BusinessJustification = "Project work in the R&D lab",
+            DurationCode = "Custom",
+            Justification = "Project work in the R&D lab",
             ValidFromUtc = DateTime.UtcNow.AddDays(5),
             ValidToUtc = DateTime.UtcNow.AddDays(1),
         };
         ValidationResult result = new CreateAccessRequestRequestValidator().Validate(request);
         Assert.Contains(result.Errors, e => e.ErrorMessage.Contains("validToUtc"));
+    }
+
+    [Fact]
+    public void CardRequest_RejectsInvalidReasonAndPhotoMetadata()
+    {
+        var request = new EIWAMS.Application.Models.DTOs.Cards.CreateCardRequestRequest
+        {
+            RequestType = "Lost",
+            Reason = "lost",
+            MobileNumber = "+1 555 555 5555",
+            Address = "Somewhere",
+            BloodGroup = "O+",
+            EmergencyContactName = "Contact",
+            EmergencyContactNumber = "+1 555 555 5556",
+            PhotoBase64 = Convert.ToBase64String([1, 2, 3]),
+            PhotoContentType = "image/jpeg",
+        };
+        Assert.False(new CreateCardRequestRequestValidator().Validate(request).IsValid);
+    }
+
+    [Fact]
+    public void CardRequest_ValidatesDamagedReasonAndPhotoSignature()
+    {
+        var request = new EIWAMS.Application.Models.DTOs.Cards.CreateCardRequestRequest
+        {
+            RequestType = "Damaged",
+            Reason = "Broken",
+            MobileNumber = "+1 555 555 5555",
+            Address = "Somewhere",
+            BloodGroup = "O+",
+            EmergencyContactName = "Contact",
+            EmergencyContactNumber = "+1 555 555 5556",
+            PhotoBase64 = Convert.ToBase64String([0xFF, 0xD8, 0xFF]),
+            PhotoContentType = "image/jpeg",
+        };
+        Assert.True(new CreateCardRequestRequestValidator().Validate(request).IsValid);
     }
 
     [Theory]

@@ -3,6 +3,8 @@ using EIWAMS.Application.Common;
 using EIWAMS.Application.Models.DTOs.Access;
 using EIWAMS.Application.Models.DTOs.Cards;
 using EIWAMS.Application.Models.DTOs.Employees;
+using EIWAMS.Application.Models.DTOs.Identity;
+using EIWAMS.Application.Models.DTOs.Insights;
 using EIWAMS.Application.Models.DTOs.Security;
 using EIWAMS.Infrastructure.DataAccessLayer;
 using EIWAMS.Infrastructure.Repositories.Implementations;
@@ -111,12 +113,85 @@ public class BusinessRuleTests
         (CardDto card, string uid) = await CreateActiveCardAsync(employee.EmployeeId);
 
         CardDto lost = await new CardRepository(_factory).ReportLostAsync(Actor(AdminUserId), card.CardId, "Lost in the cab");
-        Assert.Equal("Lost", lost.Status);
+        Assert.Equal("Blocked", lost.Status);
 
         RfidIngestResultDto swipe = await SwipeAsync("RDR-BLR-ODC1-01", uid);
         Assert.Equal("Denied", swipe.Decision);
-        Assert.Equal("CardLost", swipe.DenialReason);
+        Assert.Equal("CardBlocked", swipe.DenialReason);
         Assert.NotNull(swipe.ViolationId);
+    }
+
+    [SkippableFact]
+    public async Task TeamApprovalQueueReturnsPagedRequestsForDirectReports()
+    {
+        await EnsureDatabaseAsync();
+        PagedResult<TeamRequestItemDto> result = await new AccessRepository(_factory)
+            .GetTeamApprovalsAsync(Actor(ManagerUserId), new TeamRequestQuery { Page = 1, PageSize = 20 });
+        Assert.Equal(1, result.Page);
+        Assert.Equal(20, result.PageSize);
+        Assert.All(result.Items, item => Assert.Contains(item.RequestKind, new[] { "Card", "Access" }));
+    }
+
+    [SkippableFact]
+    public async Task EmployeeProfileAndPhotoAreStoredAndReturnedBySelfServiceProcedures()
+    {
+        await EnsureDatabaseAsync();
+        var repository = new IdentityRepository(_factory);
+        ActorContext actor = Actor(ManagerUserId);
+        MyProfileDto profile = await repository.GetMyProfileAsync(actor);
+        Assert.True(profile.EmployeeId > 0);
+
+        PhotoInfoDto info = await repository.PutMyPhotoAsync(actor, new PhotoUploadRequest
+        {
+            PhotoContentType = "image/jpeg",
+            PhotoBase64 = Convert.ToBase64String(new byte[] { 0xFF, 0xD8, 0xFF }),
+        });
+        Assert.True(info.HasPhoto);
+        PhotoDto photo = await repository.GetMyPhotoAsync(actor);
+        Assert.Equal("image/jpeg", photo.ContentType);
+        Assert.Equal(3, photo.SizeBytes);
+    }
+
+    [SkippableFact]
+    public async Task EmployeeSyncUpsertsBatchAndResolvesManagerFromSameBatch()
+    {
+        await EnsureDatabaseAsync();
+        var repository = new EmployeeRepository(_factory);
+        var request = new EmployeeSyncRequest
+        {
+            Employees =
+            [
+                new EmployeeSyncItem
+                {
+                    EmployeeNumber = "SYNC-MGR-01", FirstName = "Sync", LastName = "Manager",
+                    WorkEmail = "sync.manager@example.test", DepartmentCode = "ENG", LocationCode = "BLR-TA",
+                    EmployeeType = "Permanent", EmploymentStatus = "Active", JoinDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-90)),
+                },
+                new EmployeeSyncItem
+                {
+                    EmployeeNumber = "SYNC-EMP-01", FirstName = "Sync", LastName = "Employee",
+                    WorkEmail = "sync.employee@example.test", DepartmentCode = "ENG", LocationCode = "BLR-TA",
+                    ManagerEmployeeNumber = "SYNC-MGR-01", EmployeeType = "Permanent", EmploymentStatus = "Active",
+                    JoinDate = DateOnly.FromDateTime(DateTime.UtcNow.AddDays(-30)),
+                },
+            ],
+        };
+        EmployeeSyncResultDto inserted = await repository.SyncAsync(Actor(AdminUserId), request);
+        Assert.Equal(2, inserted.Inserted);
+        Assert.Equal(0, inserted.Deactivated);
+        EmployeeSyncResultDto updated = await repository.SyncAsync(Actor(AdminUserId), request);
+        Assert.Equal(0, updated.Inserted);
+        Assert.Equal(2, updated.Updated);
+    }
+
+    [SkippableFact]
+    public async Task DashboardHomeReturnsRoleDrivenSectionsAndPersonalRequests()
+    {
+        await EnsureDatabaseAsync();
+        HomeDashboardDto result = await new InsightsRepository(_factory).GetHomeAsync(Actor(AdminUserId));
+        Assert.NotNull(result.MyRequests);
+        Assert.NotNull(result.PendingManager);
+        Assert.NotNull(result.Reports);
     }
 
     [SkippableFact]
@@ -169,14 +244,16 @@ public class BusinessRuleTests
         await EnsureDatabaseAsync();
         var access = new AccessRepository(_factory);
         int locationId = await ScalarAsync<int>("SELECT LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-RND'");
+        int buildingId = await ScalarAsync<int>("SELECT LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA'");
         AccessRequestDetailDto request = await access.CreateRequestAsync(Actor(EshaUserId), new CreateAccessRequestRequest
         {
             EmployeeId = EshaEmployeeId,
+            AccessType = "WingFloor",
+            BuildingLocationId = buildingId,
             LocationId = locationId,
-            BusinessJustification = "Integration test: R&D lab access for prototype validation",
+            DurationCode = "OneMonth",
+            Justification = "Integration test: R&D lab access for prototype validation",
             ValidFromUtc = DateTime.UtcNow.AddDays(1),
-            ValidToUtc = DateTime.UtcNow.AddDays(30),
-            Submit = true,
         });
         Assert.Equal("PendingApproval", request.Status);
         Assert.Equal("Manager", request.CurrentStage);
@@ -208,11 +285,15 @@ public class BusinessRuleTests
     {
         await EnsureDatabaseAsync();
         int locationId = await ScalarAsync<int>("SELECT LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA-ODC2'");
+        int buildingId = await ScalarAsync<int>("SELECT LocationId FROM dbo.Locations WHERE LocationCode = N'BLR-TA'");
         Assert.Equal(ErrorType.Validation, await ErrorOf(() => new AccessRepository(_factory).CreateRequestAsync(Actor(EshaUserId), new CreateAccessRequestRequest
         {
             EmployeeId = EshaEmployeeId,
+            AccessType = "WingFloor",
+            BuildingLocationId = buildingId,
             LocationId = locationId,
-            BusinessJustification = "Integration test: invalid window",
+            DurationCode = "Custom",
+            Justification = "Integration test: invalid window",
             ValidFromUtc = DateTime.UtcNow.AddDays(10),
             ValidToUtc = DateTime.UtcNow.AddDays(2),
         })));
