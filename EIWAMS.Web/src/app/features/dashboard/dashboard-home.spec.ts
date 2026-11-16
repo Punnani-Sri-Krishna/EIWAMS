@@ -20,7 +20,7 @@ describe('role dashboard sections', () => {
     const cards = homeCardSections(home({
       pendingHr: { count: 4, route: '/approvals/hr', top: [] },
       pendingProvisioning: { count: 1, route: '/permissions/provision', top: [] },
-    }));
+    }), true);
 
     expect(cards.map((card) => card.key)).toEqual(['myRequests', 'pendingHr', 'pendingProvisioning']);
     expect(cards[0]).toMatchObject({ title: 'My Requests', count: 2, detail: '3 closed' });
@@ -28,13 +28,21 @@ describe('role dashboard sections', () => {
   });
 
   it('shows the reports section only when the reports DTO is present', () => {
-    expect(homeCardSections(home()).some((card) => card.key === 'reports')).toBe(false);
+    expect(homeCardSections(home(), true).some((card) => card.key === 'reports')).toBe(false);
     expect(homeCardSections(home({
       reports: { cardsIssuedThisMonth: 5, accessGrantedThisMonth: 6, openRequests: 7 },
-    })).find((card) => card.key === 'reports')).toMatchObject({
+    }), true).find((card) => card.key === 'reports')).toMatchObject({
       route: '/reports',
       count: 7,
       detail: '5 cards issued · 6 access grants this month',
     });
+  });
+
+  it('omits My Requests for users without an employee profile', () => {
+    const cards = homeCardSections(home({
+      pendingHr: { count: 1, route: '/approvals/hr', top: [] },
+    }), false);
+
+    expect(cards.map((card) => card.key)).toEqual(['pendingHr']);
   });
 });

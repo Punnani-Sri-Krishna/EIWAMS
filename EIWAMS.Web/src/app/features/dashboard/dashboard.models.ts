@@ -56,17 +56,17 @@ export interface HomeCardSection {
 }
 
 /** Converts nullable API sections into user-facing cards; null sections stay hidden. */
-export function homeCardSections(home: HomeDashboardDto | null): HomeCardSection[] {
+export function homeCardSections(home: HomeDashboardDto | null, hasEmployeeProfile: boolean): HomeCardSection[] {
   if (!home) return [];
-  const sections: HomeCardSection[] = [{
-    key: 'myRequests',
-    title: 'My Requests',
-    icon: 'assignment',
-    route: '/my-requests',
-    count: home.myRequests.open,
-    detail: `${home.myRequests.closed} closed`,
-    items: home.myRequests.recent,
-  }];
+  const sections: HomeCardSection[] = hasEmployeeProfile ? [{
+      key: 'myRequests',
+      title: 'My Requests',
+      icon: 'assignment',
+      route: '/my-requests',
+      count: home.myRequests.open,
+      detail: `${home.myRequests.closed} closed`,
+      items: home.myRequests.recent,
+    }] : [];
   const queues: Array<[keyof Pick<HomeDashboardDto, 'pendingManager' | 'pendingHr' | 'pendingSecurity' | 'pendingIdCard' | 'pendingAccessReview' | 'pendingProvisioning' | 'teamRequests'>, string, string]> = [
     ['pendingManager', 'Pending Manager Approvals', 'pending_actions'],
     ['pendingHr', 'HR Verification', 'fact_check'],

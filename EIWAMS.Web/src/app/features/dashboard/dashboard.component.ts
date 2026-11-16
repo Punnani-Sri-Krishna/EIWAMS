@@ -58,7 +58,8 @@ export class DashboardComponent implements OnDestroy {
   protected readonly myWork = signal<MyWorkItem[]>([]);
   protected readonly activity = signal<ActivityItem[]>([]);
   protected readonly canReports = this.session.hasPermission('Reports.View');
-  protected readonly homeCards = computed(() => homeCardSections(this.home()));
+  protected readonly hasEmployeeProfile = computed(() => typeof this.session.user()?.employeeId === 'number');
+  protected readonly homeCards = computed(() => homeCardSections(this.home(), this.hasEmployeeProfile()));
 
   protected readonly tiles = computed(() => {
     const s = this.summary();

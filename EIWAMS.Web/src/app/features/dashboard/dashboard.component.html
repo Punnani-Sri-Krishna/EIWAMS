@@ -32,13 +32,13 @@
     </div>
   } @else if (home(); as data) {
     <section class="quick-actions" aria-label="Quick actions">
-      @if (session.hasPermission('Cards.Request')) {
+      @if (hasEmployeeProfile() && session.hasPermission('Cards.Request')) {
         <a mat-flat-button routerLink="/cards/requests/new"><mat-icon>badge</mat-icon>Raise ID card request</a>
       }
-      @if (session.hasPermission('AccessRequests.Create')) {
+      @if (hasEmployeeProfile() && session.hasPermission('AccessRequests.Create')) {
         <a mat-stroked-button routerLink="/access-requests/new"><mat-icon>vpn_key</mat-icon>Raise access request</a>
       }
-      @if (session.hasPermission('Cards.View')) {
+      @if (hasEmployeeProfile() && session.hasPermission('Cards.View')) {
         <a mat-stroked-button routerLink="/my-requests"><mat-icon>assignment</mat-icon>My requests</a>
       }
     </section>

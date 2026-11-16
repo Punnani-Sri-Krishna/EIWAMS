@@ -109,6 +109,11 @@ function durationValidator(group: AbstractControl): ValidationErrors | null {
           <div class="notice warning"><mat-icon>undo</mat-icon><span>This request was returned by an approver. Update it and resubmit.</span></div>
         }
 
+        @if (!id && !hasEmployeeProfile()) {
+          <div class="notice warning" role="alert">
+            <mat-icon>info</mat-icon><span>Your account is not linked to an employee record, so you cannot raise an access request.</span>
+          </div>
+        } @else {
         <mat-stepper linear [orientation]="narrow() ? 'vertical' : 'horizontal'" labelPosition="bottom" aria-label="Access request steps">
           <!-- 1. Where -->
           <mat-step [stepControl]="whereForm" label="Location">
@@ -260,6 +265,7 @@ function durationValidator(group: AbstractControl): ValidationErrors | null {
             </div>
           </mat-step>
         </mat-stepper>
+        }
       </div>
     </section>
   `,
@@ -271,6 +277,7 @@ export class AccessRequestFormComponent {
   readonly session = inject(SessionService);
   readonly lk = inject(FeatureLookups);
   readonly id = Number(inject(ActivatedRoute).snapshot.paramMap.get('id')) || null;
+  readonly hasEmployeeProfile = computed(() => typeof this.session.user()?.employeeId === 'number');
   readonly narrow = toSignal(inject(BreakpointObserver).observe('(max-width: 767.98px)').pipe(map((s) => s.matches)), { initialValue: false });
 
   readonly typeMeta = ACCESS_TYPE_META;
@@ -396,6 +403,10 @@ export class AccessRequestFormComponent {
   }
 
   save(submit: boolean): void {
+    if (!this.id && !this.hasEmployeeProfile()) {
+      this.saveError.set({ status: 403, message: 'Your account is not linked to an employee record, so you cannot raise an access request.', errors: [], correlationId: null });
+      return;
+    }
     this.whereForm.markAllAsTouched();
     this.whenForm.markAllAsTouched();
     if (this.whereForm.invalid || this.whenForm.invalid) {
