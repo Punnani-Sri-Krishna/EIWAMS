@@ -494,6 +494,23 @@ public class BusinessRuleTests
     }
 
     [SkippableFact]
+    public async Task BuildingPermissionDoesNotOpenRestrictedFloorInsideIt()
+    {
+        TestFixture fixture = await EnsureFixtureAsync();
+        EmployeeDetailDto employee = await CreateEmployeeAsync(fixture);
+        (_, string uid) = await CreateActiveCardAsync(fixture, employee.EmployeeId);
+        DateTime now = DateTime.UtcNow;
+        await InsertPermissionAsync(fixture, employee.EmployeeId, fixture.Building.LocationId, "Active", now.AddDays(-1), now.AddDays(30));
+
+        RfidIngestResultDto denied = await SwipeAsync(fixture, fixture.RestrictedReader.ReaderId, uid);
+        Assert.Equal("Denied", denied.Decision);
+        Assert.Equal("NoPermission", denied.DenialReason);
+
+        await InsertPermissionAsync(fixture, employee.EmployeeId, fixture.RestrictedFloor.LocationId, "Active", now.AddDays(-1), now.AddDays(30));
+        Assert.Equal("Granted", (await SwipeAsync(fixture, fixture.RestrictedReader.ReaderId, uid)).Decision);
+    }
+
+    [SkippableFact]
     public async Task DuplicateRfidEventIsIdempotent()
     {
         TestFixture fixture = await EnsureFixtureAsync();
@@ -572,6 +589,29 @@ public class BusinessRuleTests
 
         Assert.Equal("PendingApproval", (await CreateAccessRequestAsync(fixture, requester)).Status);
         Assert.Equal(ErrorType.Conflict, await ErrorOf(() => access.CreateRequestAsync(Actor(requester.UserId), building)));
+    }
+
+    [SkippableFact]
+    public async Task InnerLocationAccessCoversParentForRequestsAndReaders()
+    {
+        TestFixture fixture = await EnsureFixtureAsync();
+        TestActor requester = await CreateRequesterAsync(fixture);
+        LocationDto wing = await new AdminRepository(_factory).SaveLocationAsync(Actor(fixture.AdminUserId), null, new SaveLocationRequest
+        {
+            ParentLocationId = fixture.RestrictedFloor.LocationId,
+            LocationCode = Unique("TSTW"),
+            LocationName = "Integration Test Restricted Wing",
+            LocationType = "Wing",
+            IsActive = true,
+            TimeZone = "UTC",
+        });
+        DateTime now = DateTime.UtcNow;
+        await InsertPermissionAsync(fixture, requester.EmployeeId, wing.LocationId, "Active", now.AddDays(-1), now.AddDays(30));
+
+        Assert.Equal(ErrorType.Conflict, await ErrorOf(() => CreateAccessRequestAsync(fixture, requester)));
+
+        (_, string uid) = await CreateActiveCardAsync(fixture, requester.EmployeeId);
+        Assert.Equal("Granted", (await SwipeAsync(fixture, fixture.RestrictedReader.ReaderId, uid)).Decision);
     }
 
     [SkippableFact]

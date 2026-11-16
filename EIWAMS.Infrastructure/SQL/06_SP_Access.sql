@@ -313,14 +313,16 @@ BEGIN
             THROW 50403, N'You can request access only for yourself or authorized direct reports.', 1;
 
         BEGIN TRAN;
+        -- Access to an inner area includes passage through its parents, so the target or any location inside it counts.
         IF EXISTS (SELECT 1 FROM dbo.AccessRequests WITH (UPDLOCK, HOLDLOCK)
-                   WHERE EmployeeId = @EmployeeId AND LocationId = @LocationId
+                   WHERE EmployeeId = @EmployeeId AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationDescendants(@LocationId))
                      AND Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved'))
-            THROW 50409, N'An open access request already exists for this location.', 1;
+            THROW 50409, N'An open access request already exists for this location or an area inside it.', 1;
         -- Renewal is allowed only in the final 7 days of the current access.
         IF EXISTS (SELECT 1 FROM dbo.AccessPermissions
-                   WHERE EmployeeId = @EmployeeId AND LocationId = @LocationId AND Status = N'Active' AND ValidToUtc > DATEADD(DAY, 7, @Now))
-            THROW 50409, N'This employee already has active access to this location. You can request a renewal in the last 7 days before it expires.', 1;
+                   WHERE EmployeeId = @EmployeeId AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationDescendants(@LocationId))
+                     AND Status = N'Active' AND ValidToUtc > DATEADD(DAY, 7, @Now))
+            THROW 50409, N'This employee already has active access to this location (or to an area inside it, which includes this location). You can request a renewal in the last 7 days before it expires.', 1;
 
         DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_AccessRequestNumber;
         DECLARE @Number NVARCHAR(20) = CONCAT(N'EAW-', YEAR(SYSUTCDATETIME()), N'-', RIGHT(CONCAT(N'000000', @Seq), 6));
@@ -413,12 +415,13 @@ BEGIN
         IF @Ver <> @Version THROW 50409, N'The request was changed by someone else. Reload and try again.', 1;
         IF @Status NOT IN (N'Draft', N'Returned') THROW 50409, N'Only draft or returned requests can be edited.', 1;
         IF EXISTS (SELECT 1 FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND AccessRequestId <> @AccessRequestId
-                   AND LocationId = @LocationId
+                   AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationDescendants(@LocationId))
                    AND Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved'))
-            THROW 50409, N'An open access request already exists for this location.', 1;
+            THROW 50409, N'An open access request already exists for this location or an area inside it.', 1;
         IF EXISTS (SELECT 1 FROM dbo.AccessPermissions
-                   WHERE EmployeeId = @EmpId AND LocationId = @LocationId AND Status = N'Active' AND ValidToUtc > DATEADD(DAY, 7, @Now))
-            THROW 50409, N'This employee already has active access to this location. You can request a renewal in the last 7 days before it expires.', 1;
+                   WHERE EmployeeId = @EmpId AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationDescendants(@LocationId))
+                     AND Status = N'Active' AND ValidToUtc > DATEADD(DAY, 7, @Now))
+            THROW 50409, N'This employee already has active access to this location (or to an area inside it, which includes this location). You can request a renewal in the last 7 days before it expires.', 1;
 
         DECLARE @Before NVARCHAR(MAX) = (SELECT LocationName, BusinessJustification, ValidFromUtc, ValidToUtc FROM dbo.vw_AccessRequests
                                          WHERE AccessRequestId = @AccessRequestId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);

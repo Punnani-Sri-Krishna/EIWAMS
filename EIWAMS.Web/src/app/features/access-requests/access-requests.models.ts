@@ -100,7 +100,7 @@ export const ACCESS_TYPES: AccessType[] = ['Building', 'WingFloor'];
 export const DURATION_CODES: DurationCode[] = ['OneWeek', 'OneMonth', 'ThreeMonths', 'SixMonths', 'OneYear', 'Permanent', 'Custom'];
 
 export const ACCESS_TYPE_META: Record<AccessType, { title: string; icon: string; description: string }> = {
-  Building: { title: 'Whole building', icon: 'apartment', description: 'Access to a building. Approved by your manager, the Security Head and Access Control.' },
+  Building: { title: 'Building', icon: 'apartment', description: 'Entry to a building. Restricted wings, floors and zones inside need their own request. Approved by your manager, the Security Head and Access Control.' },
   WingFloor: { title: 'Wing / floor', icon: 'meeting_room', description: 'Access to a specific wing, floor or zone. Approved by your manager, Security and Access Control.' },
 };
 

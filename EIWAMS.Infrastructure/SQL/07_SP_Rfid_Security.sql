@@ -59,6 +59,19 @@ BEGIN
 
         DECLARE @Decision NVARCHAR(10) = N'Granted', @Denial NVARCHAR(40), @VType NVARCHAR(30), @Severity NVARCHAR(10),
                 @Processing NVARCHAR(20) = N'Processed', @PermissionId BIGINT;
+        -- Nearest restricted location at or above the reader. A permission opens the reader when it is on that location,
+        -- on a location between it and the reader, or on an area inside the reader's location (access to an inner area
+        -- includes passage through its parents). Building access alone does not open restricted floors/wings/zones.
+        DECLARE @RestrictedDepth INT = (SELECT MIN(a.Depth) FROM dbo.fn_LocationAncestors(@ReaderLoc) a
+                                        JOIN dbo.Locations l ON l.LocationId = a.LocationId WHERE l.IsRestricted = 1);
+        DECLARE @Covering TABLE (LocationId INT PRIMARY KEY, SortOrder INT NOT NULL);
+        IF @RestrictedDepth IS NOT NULL
+        BEGIN
+            INSERT @Covering (LocationId, SortOrder)
+            SELECT LocationId, Depth FROM dbo.fn_LocationAncestors(@ReaderLoc) WHERE Depth <= @RestrictedDepth;
+            INSERT @Covering (LocationId, SortOrder)
+            SELECT LocationId, 100 + Depth FROM dbo.fn_LocationDescendants(@ReaderLoc) WHERE Depth > 0;
+        END
 
         IF @CardId IS NULL
             SELECT @Decision = N'Denied', @Denial = N'UnknownCard', @VType = N'EventAnomaly', @Severity = N'Medium', @Processing = N'Review';
@@ -73,17 +86,18 @@ BEGIN
         ELSE IF EXISTS (SELECT 1 FROM dbo.Blacklist WHERE IsActive = 1
                         AND ((SubjectType = N'Employee' AND SubjectId = @EmpId) OR (SubjectType = N'Card' AND SubjectId = @CardId)))
             SELECT @Decision = N'Denied', @Denial = N'Blacklisted', @VType = N'UnauthorizedZone', @Severity = N'Critical';
-        ELSE IF @EventType = N'Entry' AND EXISTS (SELECT 1 FROM dbo.fn_LocationAncestors(@ReaderLoc) a JOIN dbo.Locations l ON l.LocationId = a.LocationId
-                                                  WHERE l.IsRestricted = 1)
+        ELSE IF @EventType = N'Entry' AND @RestrictedDepth IS NOT NULL
         BEGIN
             SELECT TOP (1) @PermissionId = p.PermissionId
-            FROM dbo.AccessPermissions p JOIN dbo.fn_LocationAncestors(@ReaderLoc) a ON a.LocationId = p.LocationId
-            WHERE p.EmployeeId = @EmpId AND p.Status = N'Active' AND p.ValidFromUtc <= @EventAtUtc AND p.ValidToUtc > @EventAtUtc
-            ORDER BY a.Depth;
+            FROM dbo.AccessPermissions p JOIN @Covering c ON c.LocationId = p.LocationId
+            WHERE p.EmployeeId = @EmpId
+              AND p.Status = N'Active' AND p.ValidFromUtc <= @EventAtUtc AND p.ValidToUtc > @EventAtUtc
+            ORDER BY c.SortOrder;
             IF @PermissionId IS NULL
             BEGIN
-                IF EXISTS (SELECT 1 FROM dbo.AccessPermissions p JOIN dbo.fn_LocationAncestors(@ReaderLoc) a ON a.LocationId = p.LocationId
-                           WHERE p.EmployeeId = @EmpId AND (p.Status = N'Expired' OR (p.Status = N'Active' AND (p.ValidToUtc <= @EventAtUtc OR p.ValidFromUtc > @EventAtUtc))))
+                IF EXISTS (SELECT 1 FROM dbo.AccessPermissions p JOIN @Covering c ON c.LocationId = p.LocationId
+                           WHERE p.EmployeeId = @EmpId
+                             AND (p.Status = N'Expired' OR (p.Status = N'Active' AND (p.ValidToUtc <= @EventAtUtc OR p.ValidFromUtc > @EventAtUtc))))
                     SELECT @Decision = N'Denied', @Denial = N'PermissionExpired', @VType = N'ExpiredPermission', @Severity = N'Medium';
                 ELSE
                     SELECT @Decision = N'Denied', @Denial = N'NoPermission', @VType = N'UnauthorizedZone', @Severity = N'High';

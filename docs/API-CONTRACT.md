@@ -228,10 +228,16 @@ New columns on `AccessRequests` (guarded): `AccessType NVARCHAR(20) NOT NULL DEF
 Target rules: `Building` -> `locationId = buildingLocationId` and that location's type is `Building`. `WingFloor` ->
 `locationId` is a strict descendant of `buildingLocationId` with type `Floor`, `Wing` or `Zone`. Violations -> 400.
 
-Duplicate rules (create and update) -> 409, matched on the exact `locationId` only (building access does not cover
-the wings/floors/zones inside it): the employee already has an open request (`Draft`, `Submitted`, `PendingApproval`,
-`Returned`, `Approved`) for that location, or an `Active` permission on it that expires more than 7 days from now
-(renewal is allowed in the final 7 days).
+Duplicate rules (create and update) -> 409, matched on the target `locationId` and every location inside it (access to an
+inner wing/floor/zone includes passage through its parents; building access does not cover the areas inside it): the
+employee already has an open request (`Draft`, `Submitted`, `PendingApproval`, `Returned`, `Approved`) for the target or
+an area inside it, or an `Active` permission on the target or an area inside it that expires more than 7 days from now
+(renewal is allowed in the final 7 days). A request for an inner area is allowed while the parent is held or requested.
+
+Reader entry check: at a reader whose location (or an ancestor) is restricted, an active permission grants entry when
+it is on the nearest restricted location at or above the reader, on a location between it and the reader, or on any
+area inside the reader's location. A permission on a building therefore does not open restricted floors/wings/zones
+inside it (`NoPermission`), while a wing permission opens its restricted floor's readers.
 
 Duration: `validFromUtc` defaults to now (must not be earlier than now - 5 minutes, else 400). `validToUtc` is computed
 server-side: OneWeek +7 days, OneMonth +1 month, ThreeMonths +3 months, SixMonths +6 months, OneYear +1 year,
