@@ -314,9 +314,13 @@ BEGIN
 
         BEGIN TRAN;
         IF EXISTS (SELECT 1 FROM dbo.AccessRequests WITH (UPDLOCK, HOLDLOCK)
-                   WHERE EmployeeId = @EmployeeId AND LocationId = @LocationId
+                   WHERE EmployeeId = @EmployeeId AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationAncestors(@LocationId))
                      AND Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved'))
-            THROW 50409, N'An open access request already exists for this employee and location.', 1;
+            THROW 50409, N'An open access request already exists for this location or the building/floor that contains it.', 1;
+        -- Access on a location covers its subtree; renewal is allowed only in the final 7 days.
+        IF EXISTS (SELECT 1 FROM dbo.AccessPermissions p JOIN dbo.fn_LocationAncestors(@LocationId) a ON a.LocationId = p.LocationId
+                   WHERE p.EmployeeId = @EmployeeId AND p.Status = N'Active' AND p.ValidToUtc > DATEADD(DAY, 7, @Now))
+            THROW 50409, N'This employee already has active access to this location (directly or through its building/floor). You can request a renewal in the last 7 days before it expires.', 1;
 
         DECLARE @Seq INT = NEXT VALUE FOR dbo.seq_AccessRequestNumber;
         DECLARE @Number NVARCHAR(20) = CONCAT(N'EAW-', YEAR(SYSUTCDATETIME()), N'-', RIGHT(CONCAT(N'000000', @Seq), 6));
@@ -408,9 +412,13 @@ BEGIN
         SELECT @Status = Status, @Ver = Version, @EmpId = EmployeeId, @Number = RequestNumber FROM dbo.AccessRequests WITH (UPDLOCK) WHERE AccessRequestId = @AccessRequestId;
         IF @Ver <> @Version THROW 50409, N'The request was changed by someone else. Reload and try again.', 1;
         IF @Status NOT IN (N'Draft', N'Returned') THROW 50409, N'Only draft or returned requests can be edited.', 1;
-        IF EXISTS (SELECT 1 FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND LocationId = @LocationId AND AccessRequestId <> @AccessRequestId
+        IF EXISTS (SELECT 1 FROM dbo.AccessRequests WHERE EmployeeId = @EmpId AND AccessRequestId <> @AccessRequestId
+                   AND LocationId IN (SELECT LocationId FROM dbo.fn_LocationAncestors(@LocationId))
                    AND Status IN (N'Draft', N'Submitted', N'PendingApproval', N'Returned', N'Approved'))
-            THROW 50409, N'An open access request already exists for this employee and location.', 1;
+            THROW 50409, N'An open access request already exists for this location or the building/floor that contains it.', 1;
+        IF EXISTS (SELECT 1 FROM dbo.AccessPermissions p JOIN dbo.fn_LocationAncestors(@LocationId) a ON a.LocationId = p.LocationId
+                   WHERE p.EmployeeId = @EmpId AND p.Status = N'Active' AND p.ValidToUtc > DATEADD(DAY, 7, @Now))
+            THROW 50409, N'This employee already has active access to this location (directly or through its building/floor). You can request a renewal in the last 7 days before it expires.', 1;
 
         DECLARE @Before NVARCHAR(MAX) = (SELECT LocationName, BusinessJustification, ValidFromUtc, ValidToUtc FROM dbo.vw_AccessRequests
                                          WHERE AccessRequestId = @AccessRequestId FOR JSON PATH, WITHOUT_ARRAY_WRAPPER);

@@ -550,6 +550,26 @@ public class BusinessRuleTests
         Assert.Equal("Active", permission.Status);
         Assert.Equal("Provisioned", (await access.GetRequestAsync(Actor(requester.UserId), id)).Status);
         Assert.Equal(ErrorType.Conflict, await ErrorOf(() => access.ProvisionAsync(Actor(fixture.AccessControl.UserId), id)));
+        Assert.Equal(ErrorType.Conflict, await ErrorOf(() => CreateAccessRequestAsync(fixture, requester)));
+    }
+
+    [SkippableFact]
+    public async Task OpenBuildingRequestBlocksRequestsForLocationsInsideIt()
+    {
+        TestFixture fixture = await EnsureFixtureAsync();
+        TestActor requester = await CreateRequesterAsync(fixture);
+        var access = new AccessRepository(_factory);
+        await access.CreateRequestAsync(Actor(requester.UserId), new CreateAccessRequestRequest
+        {
+            EmployeeId = requester.EmployeeId,
+            AccessType = "Building",
+            BuildingLocationId = fixture.Building.LocationId,
+            LocationId = fixture.Building.LocationId,
+            DurationCode = "OneMonth",
+            Justification = "Integration test: building access",
+        });
+
+        Assert.Equal(ErrorType.Conflict, await ErrorOf(() => CreateAccessRequestAsync(fixture, requester)));
     }
 
     [SkippableFact]
